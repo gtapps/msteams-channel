@@ -140,5 +140,36 @@ Note the commit, the date, and any leg that failed. A failed leg is a release
 blocker unless it is one of the two documented known-impossible items
 (reactions; non-image outbound files).
 
-Last full pass: _not yet run_ — legs 1–8 were each verified individually during
-Phases 3 and 4 (2026-07-31), but not as one consolidated run against one build.
+### Run log
+
+**2026-07-31, build `cf26d90`** — in progress.
+
+| Leg | Result |
+|---|---|
+| 1 DM → threaded reply | **pass** (after the instructions fix below) |
+| 8 permission request relayed to Teams | **pass** — arrived in the DM |
+| 2–7, and the `y <code>` verdict | not yet run |
+
+Leg 1 failed on the first attempt against `b25dfce`: the message was delivered
+(`notifications/claude/channel` in the debug log) but the model answered in the
+terminal transcript instead of calling `reply`, so the sender got silence. What
+that surfaced — see `cf26d90` — is that **Claude Code truncates MCP server
+instructions at 2048 characters** and says so only in a `[DEBUG]` line. Ours
+were 2224, so the tail of the prompt-injection rule had been deleted at every
+session start since M1, and the contract test that was meant to catch it passed
+because it asserted against the raw `initialize` response rather than the 2048
+characters the model receives. Instructions are now 1643 chars and the budget is
+pinned by a test.
+
+Note the truncation did **not** explain the failed leg — the reply-routing
+paragraph is first and always survived. The leg passed on retry after a session
+restart, so the original cause is not established. If it recurs, the untested
+suspect is instruction dilution: that session had nine MCP servers loaded.
+
+**Worth knowing for the remaining legs:** under `--permission-mode default`
+every `reply` prompts for approval, and that prompt is itself relayed to Teams.
+The circularity is harmless — verdicts are intercepted on the inbound path, which
+does not depend on the tool being gated — but approving `reply` once for the
+session makes legs 2–7 much less tedious.
+
+Last full pass: _not yet complete_.
