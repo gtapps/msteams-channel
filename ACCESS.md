@@ -59,9 +59,21 @@ A channel is opted in per conversation:
 contains the conversation id URL-encoded — `19%3A...%40thread.tacv2` decodes to
 `19:...@thread.tacv2`. Same shape as Discord's Copy Channel ID.
 
-**Group chats are the exception.** They have no shareable link, so their ids are
-not obtainable from the Teams UI. If you need one, the server logs a refused
-inbound to stderr with the conversation id.
+**Group chats are the exception, and the workaround is awkward.** They have no
+shareable link, so their ids are not obtainable from the Teams UI at all. The
+only place a group chat's id surfaces is the server's own stderr, where a
+refused inbound is logged with it — and **mid-session stderr from an MCP server
+never reaches `~/.claude/debug/`**, so reading it means running the server
+standalone:
+
+```
+bun server.ts          # in its own terminal, with the tunnel pointed at it
+                       # then send one message in the group chat
+msteams channel: refused inbound (conversation_not_opted_in) conversation=19:...@thread.v2 type=groupChat
+```
+
+Then `/msteams:access group add <that id>`. If that is too awkward, prefer a
+channel: channels have Copy link, and this is the one case they do better.
 
 **An empty per-channel `allowFrom` means anyone in that channel can talk to the
 bot.** That is deliberate and it matches discord and telegram: opting the

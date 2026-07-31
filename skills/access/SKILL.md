@@ -144,9 +144,12 @@ Read, set the key, write, confirm.
 - Lowercase every AAD object id before writing. The gate normalizes both sides,
   but a consistent file is easier for the operator to read.
 - Group-chat conversation ids are **not obtainable from the Teams UI** — group
-  chats have no shareable link. Channels do. If the user wants a group chat
-  opted in, they need the id from the server's stderr log, where a refused
-  inbound is recorded.
+  chats have no shareable link. Channels do (`⋯` → Copy link). If the user wants
+  a *group chat* opted in, the id appears only in the server's stderr on a
+  refused inbound, and mid-session MCP stderr does not reach
+  `~/.claude/debug/` — so tell them to run `bun server.ts` standalone, send one
+  message in that chat, and read the `refused inbound (...) conversation=` line.
+  Do not tell them to check a debug log; there will be nothing in it.
 - Pairing always requires the code. If the user says "approve the pairing"
   without one, list the pending entries and ask which. Don't auto-pick even when
   there is exactly one — a stranger can seed a single pending entry just by

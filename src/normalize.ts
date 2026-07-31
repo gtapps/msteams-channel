@@ -29,10 +29,10 @@ export type Attachment = {
 
 export type NormalizeInput = {
   activity: Record<string, any>
-  /** Set only for images we eagerly downloaded AFTER the gate passed. */
-  imagePath?: string
-  /** Lazily-referenced attachment the model can fetch via download_attachment. */
-  attachment?: Attachment
+  /** Images we eagerly downloaded AFTER the gate passed, in arrival order. */
+  imagePaths?: string[]
+  /** Every real file on the activity — not just the first of each kind. */
+  attachments?: Attachment[]
 }
 
 const META_KEY = /^[A-Za-z0-9_]+$/
@@ -70,25 +70,48 @@ export function normalize(input: NormalizeInput): ChannelNotification {
   put(meta, 'tenant_id', a.channelData?.tenant?.id ?? a.conversation?.tenantId)
   put(meta, 'ts', a.timestamp ?? new Date().toISOString())
 
-  // Present when this activity is itself a reply inside a thread.
+  // Never observed on this tenant — Teams leaves it absent even on a genuine
+  // thread reply, which is why threading uses the conversation id instead
+  // (tests/fixtures.test.ts asserts the absence). Emitted only so a tenant or
+  // activity type that does set it is not silently discarded; do not build on it.
   put(meta, 'reply_to_id', a.replyToId)
 
-  if (input.imagePath) put(meta, 'image_path', input.imagePath)
+  const imagePaths = input.imagePaths ?? []
+  const attachments = input.attachments ?? []
 
-  if (input.attachment) {
-    put(meta, 'attachment_id', input.attachment.id)
-    put(meta, 'attachment_kind', input.attachment.kind)
-    if (input.attachment.size != null) put(meta, 'attachment_size', String(input.attachment.size))
-    put(meta, 'attachment_mime', input.attachment.mime)
-    if (input.attachment.name) put(meta, 'attachment_name', sanitizeFilename(input.attachment.name))
+  // The first of each kind keeps its own key: the overwhelmingly common case is
+  // one file, and a single key is what the instructions teach.
+  if (imagePaths[0]) put(meta, 'image_path', imagePaths[0])
+  if (imagePaths.length > 1) put(meta, 'image_paths', imagePaths.join('; '))
+
+  const firstFile = attachments.find(f => f.kind !== 'image')
+  if (firstFile) {
+    put(meta, 'attachment_id', firstFile.id)
+    put(meta, 'attachment_kind', firstFile.kind)
+    if (firstFile.size != null) put(meta, 'attachment_size', String(firstFile.size))
+    put(meta, 'attachment_mime', firstFile.mime)
+    if (firstFile.name) put(meta, 'attachment_name', sanitizeFilename(firstFile.name))
+  }
+
+  // But a second file must not become unreachable. Count plus a listing that
+  // carries every handle, matching discord's `attachment_count`/`attachments`
+  // pair (external_plugins/discord/server.ts @ db253f26).
+  if (attachments.length) {
+    put(meta, 'attachment_count', String(attachments.length))
+    if (attachments.length > 1) {
+      put(
+        meta,
+        'attachments',
+        attachments
+          .map(f => `${sanitizeFilename(f.name ?? 'file')} (${f.mime ?? 'unknown'}) id=${f.id}`)
+          .join('; '),
+      )
+    }
   }
 
   const text = typeof a.text === 'string' ? a.text : ''
-  const fallback = input.attachment?.name
-    ? `(${sanitizeFilename(input.attachment.name)})`
-    : input.imagePath
-      ? '(image)'
-      : ''
+  const named = attachments.find(f => f.name)?.name
+  const fallback = named ? `(${sanitizeFilename(named)})` : imagePaths.length ? '(image)' : ''
 
   return { content: text || fallback, meta }
 }

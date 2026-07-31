@@ -19,8 +19,8 @@ describe('meta contract', () => {
   test('every meta key is [A-Za-z0-9_]+ — hyphenated keys would be silently dropped', () => {
     const { meta } = normalize({
       activity: dmActivity(),
-      imagePath: '/tmp/x.png',
-      attachment: { id: 'att1', kind: 'file', size: 12, mime: 'text/plain', name: 'a.txt' },
+      imagePaths: ['/tmp/x.png'],
+      attachments: [{ id: 'att1', kind: 'file', size: 12, mime: 'text/plain', name: 'a.txt' }],
     })
     for (const key of Object.keys(meta)) {
       expect(key).toMatch(/^[A-Za-z0-9_]+$/)
@@ -30,7 +30,7 @@ describe('meta contract', () => {
   test('every meta value is a string', () => {
     const { meta } = normalize({
       activity: dmActivity(),
-      attachment: { id: 'att1', kind: 'file', size: 4096 },
+      attachments: [{ id: 'att1', kind: 'file', size: 4096 }],
     })
     for (const value of Object.values(meta)) {
       expect(typeof value).toBe('string')
@@ -76,7 +76,7 @@ describe('meta contract', () => {
 
 describe('attachments and images', () => {
   test('image_path travels in meta, never in content', () => {
-    const { content, meta } = normalize({ activity: dmActivity(), imagePath: '/tmp/inbox/a.png' })
+    const { content, meta } = normalize({ activity: dmActivity(), imagePaths: ['/tmp/inbox/a.png'] })
     expect(meta.image_path).toBe('/tmp/inbox/a.png')
     expect(content).toBe('hello')
     expect(content).not.toContain('/tmp/inbox/a.png')
@@ -91,7 +91,7 @@ describe('attachments and images', () => {
   test('attachment fields are carried for the lazy download path', () => {
     const { meta } = normalize({
       activity: dmActivity(),
-      attachment: { id: 'att1', kind: 'file', size: 2048, mime: 'application/pdf', name: 'report.pdf' },
+      attachments: [{ id: 'att1', kind: 'file', size: 2048, mime: 'application/pdf', name: 'report.pdf' }],
     })
     expect(meta.attachment_id).toBe('att1')
     expect(meta.attachment_kind).toBe('file')
@@ -104,14 +104,82 @@ describe('attachments and images', () => {
     const a = { ...dmActivity(), text: '' }
     const { content } = normalize({
       activity: a,
-      attachment: { id: 'att1', kind: 'file', name: 'report.pdf' },
+      attachments: [{ id: 'att1', kind: 'file', name: 'report.pdf' }],
     })
     expect(content).toBe('(report.pdf)')
   })
 
   test('an image-only message gets a non-empty content fallback', () => {
     const a = { ...dmActivity(), text: '' }
-    expect(normalize({ activity: a, imagePath: '/tmp/a.png' }).content).toBe('(image)')
+    expect(normalize({ activity: a, imagePaths: ['/tmp/a.png'] }).content).toBe('(image)')
+  })
+})
+
+describe('more than one attachment', () => {
+  // No captured fixture carries two files, so the corpus cannot catch this:
+  // only the first image and first non-image used to be surfaced, leaving every
+  // other handle unreachable with nothing to say a file had gone missing.
+  const twoFiles = [
+    { id: 'h1', kind: 'file', mime: 'application/pdf', name: 'first.pdf' },
+    { id: 'h2', kind: 'file', mime: 'text/csv', name: 'second.csv' },
+  ]
+
+  test('a count is always emitted when files are present', () => {
+    expect(normalize({ activity: dmActivity(), attachments: twoFiles }).meta.attachment_count).toBe('2')
+    expect(
+      normalize({ activity: dmActivity(), attachments: [twoFiles[0]!] }).meta.attachment_count,
+    ).toBe('1')
+    expect(normalize({ activity: dmActivity() }).meta.attachment_count).toBeUndefined()
+  })
+
+  test('every handle stays reachable, not just the first', () => {
+    const { meta } = normalize({ activity: dmActivity(), attachments: twoFiles })
+    expect(meta.attachment_id).toBe('h1') // the singular key still names the first
+    expect(meta.attachments).toContain('id=h1')
+    expect(meta.attachments).toContain('id=h2')
+    expect(meta.attachments).toContain('second.csv')
+  })
+
+  test('the listing is omitted for the ordinary single-file case', () => {
+    const { meta } = normalize({ activity: dmActivity(), attachments: [twoFiles[0]!] })
+    expect(meta.attachments).toBeUndefined()
+    expect(meta.attachment_id).toBe('h1')
+  })
+
+  test('a second image is delivered rather than dropped', () => {
+    const { meta } = normalize({
+      activity: dmActivity(),
+      imagePaths: ['/tmp/inbox/a.png', '/tmp/inbox/b.png'],
+    })
+    expect(meta.image_path).toBe('/tmp/inbox/a.png')
+    expect(meta.image_paths).toBe('/tmp/inbox/a.png; /tmp/inbox/b.png')
+  })
+
+  test('listed filenames are sanitized too', () => {
+    const { meta } = normalize({
+      activity: dmActivity(),
+      attachments: [
+        { id: 'h1', kind: 'file', name: 'ok.pdf' },
+        { id: 'h2', kind: 'file', name: '../../etc/passwd' },
+      ],
+    })
+    expect(meta.attachments).not.toContain('/')
+  })
+
+  test('mixed images and files: images downloaded, files listed by handle', () => {
+    const { meta } = normalize({
+      activity: dmActivity(),
+      imagePaths: ['/tmp/inbox/shot.png'],
+      attachments: [
+        { id: 'i1', kind: 'image', mime: 'image/png', name: 'shot.png' },
+        { id: 'f1', kind: 'file', mime: 'application/pdf', name: 'doc.pdf' },
+      ],
+    })
+    expect(meta.image_path).toBe('/tmp/inbox/shot.png')
+    expect(meta.attachment_id).toBe('f1') // the singular key skips images
+    expect(meta.attachment_count).toBe('2')
+    expect(meta.attachments).toContain('id=i1')
+    expect(meta.attachments).toContain('id=f1')
   })
 })
 
@@ -132,7 +200,7 @@ describe('filename sanitization', () => {
   test('a traversal filename is sanitized before it reaches meta', () => {
     const { meta } = normalize({
       activity: dmActivity(),
-      attachment: { id: 'a', kind: 'file', name: '../../etc/passwd' },
+      attachments: [{ id: 'a', kind: 'file', name: '../../etc/passwd' }],
     })
     expect(meta.attachment_name).not.toContain('/')
   })

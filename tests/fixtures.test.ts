@@ -7,7 +7,7 @@
  */
 
 import { test, expect, describe } from 'bun:test'
-import { readFileSync, mkdtempSync } from 'fs'
+import { readFileSync, readdirSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { IngressQueue } from '../src/queue.js'
@@ -31,9 +31,31 @@ describe('scrubbing held', () => {
   // A fixture that leaks a real credential is worse than no fixture, and these
   // files are refreshed by hand, so the guard lives with the data.
   test('no fixture carries tenant, user or token material', () => {
-    const all = readFileSync(join(DIR, 'dm-attachment-image.json'), 'utf8')
-    for (const marker of ['tempauth', 'sharepoint.com', 'eyJ']) {
-      expect(all).not.toContain(marker)
+    // Reads the directory rather than a named file: this used to check only
+    // dm-attachment-image.json, which was exhaustive purely because it is the
+    // one capture bearing a file. The next multi-file capture would have been
+    // scrubbed by nobody.
+    const names = readdirSync(DIR).filter(n => n.endsWith('.json'))
+    expect(names.length).toBeGreaterThan(1)
+
+    for (const name of names) {
+      const raw = readFileSync(join(DIR, name), 'utf8')
+      for (const marker of ['tempauth', 'sharepoint.com', 'eyJ']) {
+        expect(`${name}: ${raw}`).not.toContain(marker)
+      }
+    }
+  })
+
+  test('the real tenant and sender ids were replaced with stand-ins', () => {
+    // The scrubber substitutes same-shape values; these are the ones every
+    // other test in this file asserts against, so a fixture refreshed from a
+    // live capture without re-scrubbing fails here.
+    for (const name of readdirSync(DIR).filter(n => n.endsWith('.json'))) {
+      const raw = readFileSync(join(DIR, name), 'utf8')
+      const tenants = new Set(raw.match(/"tenantId"\s*:\s*"([^"]+)"/g) ?? [])
+      for (const match of tenants) {
+        expect(`${name}: ${match}`).toContain(TENANT)
+      }
     }
   })
 })
