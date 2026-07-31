@@ -26,6 +26,46 @@ export type BunAdapterOptions = {
   onError?: (err: unknown) => void
 }
 
+/** Sentinel, so the caller can tell "too large" from a genuine read failure. */
+const TOO_LARGE = Symbol('body too large')
+
+/**
+ * Read the body, aborting the moment it exceeds `max` — never after.
+ *
+ * `content-length` is both a claim and an optional one: a chunked request omits
+ * it entirely, so the declared check sees `0` and waves everything through.
+ * Buffering first and measuring second would therefore let an unauthenticated
+ * peer — this runs *before* JWT validation, on a publicly-tunnelled ingress —
+ * allocate as much as the runtime's own ceiling allows. Measured: a chunked
+ * POST against the old code took ~270MB of RSS against a 1MB limit.
+ *
+ * Counted in bytes, not `string.length`: a UTF-16 code unit is up to 3 bytes of
+ * UTF-8, so measuring the decoded string would undercount a CJK body threefold.
+ *
+ * Same stream-and-abort shape as `attachments.ts`, for the same reason.
+ */
+async function readBounded(req: Request, max: number): Promise<string> {
+  const reader = req.body?.getReader()
+  if (!reader) return ''
+
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > max) throw TOO_LARGE
+      chunks.push(value)
+    }
+  } finally {
+    // Drops the connection instead of politely draining a hostile upload.
+    reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks))
+}
+
 export class BunHttpAdapter implements IHttpServerAdapter {
   private readonly routes = new Map<string, HttpRouteHandler>()
   private server?: ReturnType<typeof Bun.serve>
@@ -72,14 +112,11 @@ export class BunHttpAdapter implements IHttpServerAdapter {
 
         let raw: string
         try {
-          raw = await req.text()
+          raw = await readBounded(req, maxBodyBytes)
         } catch (err) {
+          if (err === TOO_LARGE) return new Response('payload too large', { status: 413 })
           onError?.(err)
           return new Response('bad request', { status: 400 })
-        }
-        // content-length is a claim, not a fact — check the real size too.
-        if (raw.length > maxBodyBytes) {
-          return new Response('payload too large', { status: 413 })
         }
 
         let body: unknown
