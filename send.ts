@@ -17,8 +17,9 @@
  *   bun send.ts --conversation <id> --text <message> [--thread <thread_id>]
  *   bun send.ts --list
  *
- * Text may also arrive on stdin, which is what a caller with a long or
- * shell-hostile message should use:
+ * Text may also arrive on stdin, which is what a caller with a long,
+ * shell-hostile, or sensitive message should use — argv is world-readable in
+ * /proc, so `--text` puts the message body where any local user can read it:
  *   echo "..." | bun send.ts --conversation <id>
  *
  * Exit codes: 0 sent · 1 bad usage · 2 not configured · 3 refused by the
@@ -44,6 +45,20 @@ function die(code: number, message: string): never {
 function flag(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`)
   return i === -1 ? undefined : process.argv[i + 1]
+}
+
+/**
+ * An id flag whose value cannot be the next flag.
+ *
+ * `--conversation --text hi` otherwise takes `"--text"` as the conversation id
+ * and fails as "no inbound conversation on record" — a usage error reported as
+ * a gate refusal, which sends the caller looking in the wrong place. Applied
+ * only to ids: a *message* legitimately starts with `--`.
+ */
+function idFlag(name: string): string | undefined {
+  const value = flag(name)
+  if (value?.startsWith('--')) die(1, `--${name} needs a value`)
+  return value
 }
 
 // Credentials come from the state dir only — argv is world-readable in /proc.
@@ -72,7 +87,7 @@ if (process.argv.includes('--list')) {
   process.exit(0)
 }
 
-const conversationId = flag('conversation')
+const conversationId = idFlag('conversation')
 if (!conversationId) {
   die(1, 'usage: bun send.ts --conversation <id> --text <message> [--thread <thread_id>]\n       bun send.ts --list')
 }
@@ -102,7 +117,7 @@ if (!outbound.allowed) {
 }
 
 const app = new App({ clientId: APP_ID, clientSecret: APP_PASSWORD, tenantId: TENANT_ID })
-const threadId = flag('thread')
+const threadId = idFlag('thread')
 
 // Declared outside the try so a failure can report what already landed. Which
 // parts got through matters: the recipient has seen them, so re-running the
