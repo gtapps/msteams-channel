@@ -142,53 +142,66 @@ blocker unless it is one of the two documented known-impossible items
 
 ### Run log
 
-**2026-07-31, build `cf26d90`** — in progress.
+**2026-07-31.** Legs 1–2 verified on `cf26d90`; legs 3–5 and 7–8 on `8f26992`
+after the second instructions fix.
 
 | Leg | Result |
 |---|---|
-| 1 DM → threaded reply | **pass** (after the instructions fix below) |
+| 1 DM → threaded reply | **pass** (after finding 1) |
 | 2 channel mention → threaded reply | **pass** |
-| 3 inbound attachments | **partial** — delivery correct, reply not routed |
-| 8 permission request relayed to Teams | **pass** — arrived in the DM |
-| 4–7, and the `y <code>` verdict | not yet run |
+| 3 inbound attachments | **pass** (after finding 2) |
+| 4 outbound image + refusals | **pass** |
+| 5 `edit_message`, `react` 412 | **pass** |
+| 6 pairing and revocation | **NOT RUN** — needs a second Teams account |
+| 7 proactive CLI send | **pass** — `--list` marking correct, `--text` and stdin both exit 0 with ids, unknown conversation exit 3 without sending |
+| 8 permission verdict | **pass** — request relayed to the DM, `y <code>` honoured |
 
-**Leg 3 confirmed the multi-attachment fix on a live tenant**: two images in one
-message both arrived and both were readable. That is precisely the case that
-previously delivered one and dropped the other with no count and no listing.
+**7 of 8 pass. Leg 6 is the gap, and it is not a small one.** It is the only leg
+exercising the pairing handshake end to end, and the only live proof that
+revoking access stops *inbound*. The outbound half of revocation is covered
+offline (`tests/send.test.ts`, "a stored reference is NOT sufficient once access
+is revoked"), but the pairing flow and a live post-revocation drop have no
+coverage beyond the Phase 4 smoke. **Run leg 6 before calling this MVP-complete.**
 
-**But the model answered in the transcript again, and this time the pattern is
-legible.** Legs 1 and 2 were single-response turns and routed to `reply`
-correctly. Leg 3 required `Read` calls first — and the reply never came. The
+Leg 3 also confirmed the multi-attachment fix against the live tenant: two images
+in one message both arrived and both were readable — precisely the case that
+used to deliver one and drop the other with no count and no listing.
+
+#### Finding 1 — instructions were being truncated (`cf26d90`)
+
+Leg 1 failed first time. The message was delivered (`notifications/claude/channel`
+in the debug log) but the model answered in the terminal, so the sender got
+silence. Investigating surfaced an unrelated, older defect: **Claude Code
+truncates MCP server instructions at 2048 characters**, announced only in a
+`[DEBUG]` line. Ours were 2224, so the tail of the prompt-injection rule had been
+deleted at every session start since M1 — and the contract test meant to catch
+exactly that passed throughout, because it asserted against the raw `initialize`
+response rather than the 2048 characters the model receives. Instructions are now
+inside the budget, and the budget is pinned by a test.
+
+This did **not** explain the failed leg: the reply-routing paragraph is first and
+always survived. That cause is finding 2.
+
+#### Finding 2 — a local action with no return path (`8f26992`)
+
+Legs 1 and 2 were single-response turns and routed to `reply` correctly. Leg 3
+began with `Read` calls for the attached images — and no reply followed. The
 attachment instruction ended on a *local* action ("just Read it") with no return
-path, so the turn read as complete once the files had been read. Two sentences
-added: a general rule in the opening paragraph that a turn beginning with a
-Teams message is not finished until `reply` has been called, however many tools
-ran in between, and a closing line on the attachment paragraph that reading a
-file is not answering. 1841 chars, still inside the 2048 budget.
+path, so once the files were read the turn looked finished. Two sentences fixed
+it: a general rule that a turn beginning with a Teams message is not finished
+until `reply` has been called, however many other tools ran first, and a closing
+line that reading a file is not answering. Confirmed by re-running leg 3.
 
-This is a hypothesis with a mechanism, not a proven cause — re-run leg 3 after a
-session restart to confirm.
+So legs 1 and 3 shared one root cause. **The lesson generalizes past this
+plugin:** in channel instructions, every branch that tells the model to act
+locally must name the return path, or the sender gets silence while the terminal
+gets the answer — and the failure is invisible from the Teams side.
 
-Leg 1 failed on the first attempt against `b25dfce`: the message was delivered
-(`notifications/claude/channel` in the debug log) but the model answered in the
-terminal transcript instead of calling `reply`, so the sender got silence. What
-that surfaced — see `cf26d90` — is that **Claude Code truncates MCP server
-instructions at 2048 characters** and says so only in a `[DEBUG]` line. Ours
-were 2224, so the tail of the prompt-injection rule had been deleted at every
-session start since M1, and the contract test that was meant to catch it passed
-because it asserted against the raw `initialize` response rather than the 2048
-characters the model receives. Instructions are now 1643 chars and the budget is
-pinned by a test.
+#### Note for future runs
 
-Note the truncation did **not** explain the failed leg — the reply-routing
-paragraph is first and always survived. The leg passed on retry after a session
-restart, so the original cause is not established. If it recurs, the untested
-suspect is instruction dilution: that session had nine MCP servers loaded.
+Under `--permission-mode default` every `reply` prompts for approval, and that
+prompt is itself relayed to Teams. The circularity is harmless — verdicts are
+intercepted on the inbound path, which does not depend on the tool being gated —
+but approving `reply` once at the start makes the run much less tedious.
 
-**Worth knowing for the remaining legs:** under `--permission-mode default`
-every `reply` prompts for approval, and that prompt is itself relayed to Teams.
-The circularity is harmless — verdicts are intercepted on the inbound path, which
-does not depend on the tool being gated — but approving `reply` once for the
-session makes legs 2–7 much less tedious.
-
-Last full pass: _not yet complete_.
+Last full pass: _not yet complete_ — 7 of 8, leg 6 outstanding.
