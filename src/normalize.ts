@@ -12,7 +12,7 @@
  * that string; a meta key is not.
  */
 
-import { normalizeConversationId, type ConversationType } from './gate.js'
+import { normalizeConversationId, extractThreadId, type ConversationType } from './gate.js'
 
 export type ChannelNotification = {
   content: string
@@ -59,9 +59,12 @@ export function normalize(input: NormalizeInput): ChannelNotification {
   const conversationType = (a.conversation?.conversationType ?? 'personal') as ConversationType
   const meta: Record<string, string> = {}
 
-  put(meta, 'conversation_id', normalizeConversationId(String(a.conversation?.id ?? '')))
+  const rawConversationId = String(a.conversation?.id ?? '')
+  put(meta, 'conversation_id', normalizeConversationId(rawConversationId))
   put(meta, 'conversation_type', conversationType)
   put(meta, 'message_id', a.id)
+  // Channels only, and the one value a reply must thread on — see extractThreadId.
+  put(meta, 'thread_id', extractThreadId(rawConversationId, conversationType, a.replyToId))
   put(meta, 'user', a.from?.name)
   put(meta, 'user_id', a.from?.aadObjectId)
   put(meta, 'tenant_id', a.channelData?.tenant?.id ?? a.conversation?.tenantId)

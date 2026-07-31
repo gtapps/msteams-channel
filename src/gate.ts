@@ -59,6 +59,31 @@ export function normalizeConversationId(id: string): string {
   return semi === -1 ? id : id.slice(0, semi)
 }
 
+/**
+ * The thread a channel activity belongs to, or undefined outside channels.
+ *
+ * Teams does not populate `activity.replyToId` for channel posts — verified
+ * against a live tenant, where a thread root and a reply inside it both omitted
+ * the key entirely and carried the SAME `conversation.id` ending
+ * `;messageid=<root>`.
+ * So the thread identity lives in the conversation id, and `replyToId` is only
+ * a fallback for shapes that do set it. Precedence matches OpenClaw
+ * (MIT, 32b2e161a5a — `extensions/msteams/src/monitor.ts:691`).
+ *
+ * Consequence for replies: thread on THIS value, never on `activity.id`. A
+ * reply's own id is not a thread root, and sending to it would open a new
+ * thread instead of continuing the one being answered.
+ */
+export function extractThreadId(
+  rawConversationId: string,
+  conversationType: ConversationType,
+  replyToId?: string,
+): string | undefined {
+  if (conversationType.toLowerCase() !== 'channel') return undefined
+  const match = /(?:^|;)messageid=([^;]+)/i.exec(rawConversationId)
+  return match?.[1]?.trim() || replyToId || undefined
+}
+
 /** AAD object ids are case-insensitive GUIDs; compare them lowercased. */
 export function normalizeSenderId(aadObjectId: string): string {
   return aadObjectId.trim().toLowerCase()

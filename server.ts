@@ -105,7 +105,9 @@ const mcp = new Server(
     instructions: [
       'The sender reads Microsoft Teams, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Teams arrive as <channel source="msteams" conversation_id="..." conversation_type="..." message_id="..." user="..." user_id="..." tenant_id="..." ts="...">. Reply with the reply tool, passing conversation_id back. In a channel or thread, pass reply_to (set to the message_id you are answering) so the reply lands in the right thread; a fresh top-level post omits it.',
+      'Messages from Teams arrive as <channel source="msteams" conversation_id="..." conversation_type="..." message_id="..." user="..." user_id="..." tenant_id="..." ts="...">. Reply with the reply tool, passing conversation_id back.',
+      '',
+      'Channel messages also carry thread_id. To answer inside that thread, call reply with reply_to set to the thread_id — copy that attribute, never message_id. Teams threads are containers identified by their root post, so a reply\'s own message_id is not a thread, and sending to it starts a new thread beside the one you meant to answer. Omit reply_to only for a deliberate fresh top-level post. DMs have no threads and carry no thread_id.',
       '',
       'If the tag has an image_path attribute, Read that file — it is an image the sender attached. If it has attachment_id, call download_attachment with that id to fetch the file, then Read the returned path.',
       '',
@@ -124,13 +126,23 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Send a message back to a Microsoft Teams conversation. Pass the conversation_id from the inbound <channel> tag. Set reply_to to a message_id to answer inside that thread.',
+        'Send a message back to a Microsoft Teams conversation. Pass the conversation_id from the inbound <channel> tag. To answer inside a channel thread, set reply_to to that tag\'s thread_id. Returns the id of the message sent, which edit_message takes.',
       inputSchema: {
         type: 'object',
         properties: {
           conversation_id: { type: 'string', description: 'From the inbound tag' },
           text: { type: 'string', description: 'Message to send' },
-          reply_to: { type: 'string', description: 'message_id to reply to, for threading' },
+          reply_to: {
+            type: 'string',
+            description:
+              'Copy the inbound tag\'s thread_id here verbatim to answer inside that thread. Do NOT pass message_id: unlike other chat platforms, a Teams thread is identified by its root post, so a reply\'s own message_id is not a thread and sending to it opens a new one. Omit for a fresh top-level post, and in DMs, which have no threads and carry no thread_id.',
+          },
+          format: {
+            type: 'string',
+            enum: ['markdown', 'plain'],
+            description:
+              "Rendering mode. Default 'markdown' — Teams renders bold, italic, code and links. Pass 'plain' when the text must appear literally (it contains * or _ that are not formatting).",
+          },
         },
         required: ['conversation_id', 'text'],
       },
@@ -147,7 +159,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
   const conversationId = String(args.conversation_id ?? '')
   const text = String(args.text ?? '')
-  const replyTo = args.reply_to ? String(args.reply_to) : undefined
+  // Named reply_to for parity with the telegram and discord plugins, but it
+  // carries the inbound tag's thread_id — see the tool description.
+  const threadId = args.reply_to ? String(args.reply_to) : undefined
+  // Teams defaults to markdown, so plain has to be asked for explicitly —
+  // the opposite of Telegram, where plain is the default.
+  const textFormat = args.format === 'plain' ? 'plain' : 'markdown'
   if (!conversationId || !text) return fail('conversation_id and text are required')
 
   // OUTBOUND GATE. A conversation reference exists only for conversations the
@@ -160,15 +177,35 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     return fail('refused: no inbound conversation on record for that conversation_id')
   }
 
+  const chunks = chunkText(text)
+  const sentIds: string[] = []
   try {
-    for (const chunk of chunkText(text)) {
-      if (replyTo) await teamsApp.reply(ref.conversationId, replyTo, chunk as any)
-      else await teamsApp.send(ref.conversationId, chunk as any)
+    for (const chunk of chunks) {
+      const activity = { type: 'message', text: chunk, textFormat } as any
+      const sent = threadId
+        ? await teamsApp.reply(ref.conversationId, threadId, activity)
+        : await teamsApp.send(ref.conversationId, activity)
+      if (sent?.id) sentIds.push(String(sent.id))
     }
-    return { content: [{ type: 'text' as const, text: 'sent' }] }
   } catch (err) {
     process.stderr.write(`msteams channel: reply failed: ${err}\n`)
-    return fail(`send failed: ${err instanceof Error ? err.message : String(err)}`)
+    const detail = err instanceof Error ? err.message : String(err)
+    // Which chunks landed matters: the sender has already seen them, so a
+    // blind retry would repeat text rather than resume it.
+    return fail(`send failed after ${sentIds.length} of ${chunks.length} chunk(s) sent: ${detail}`)
+  }
+
+  const ids = sentIds.join(', ')
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text:
+          chunks.length === 1
+            ? `sent (id: ${ids || 'unknown'})`
+            : `sent ${chunks.length} parts (ids: ${ids || 'unknown'})`,
+      },
+    ],
   }
 })
 

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["bun"],
+    "strict": true,
+    "noEmit": true,
+    // The SDK ships express typings for its ExpressAdapter, but we serve with
+    // Bun and deliberately do not install express — so its .d.ts files cannot
+    // resolve and would fail the build over a dependency we don't use.
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["server.ts", "src/**/*.ts", "tests/**/*.ts"]
+}
