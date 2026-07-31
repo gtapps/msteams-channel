@@ -59,9 +59,14 @@ Bot resource, in your own tenant. The Azure Bot **F0 tier is free** and
 Microsoft Teams counts as a "standard channel", so Teams messaging costs
 nothing; you still need an Azure subscription to hold the resource.
 
-`/msteams:configure` walks the whole path (registration → credentials →
-tunnel/endpoint → manifest upload → smoke test). `/msteams:access` manages
-pairing and allowlists.
+**[docs/SETUP.md](docs/SETUP.md) is the runbook** — every command in it was
+executed against a real tenant, and it records the several places where the
+vendor tooling does not behave as documented (a broken `az bot msteams` command,
+a tunnel hostname that ignores the alias you pin, a resource provider that is
+unregistered by default). Read it before provisioning.
+
+`/msteams:configure` will eventually walk this interactively; `/msteams:access`
+manages pairing and allowlists.
 
 Credentials live only in `~/.claude/channels/msteams/.env` (mode 0600), never
 in argv or logs. Override the state dir with `MSTEAMS_STATE_DIR`.
