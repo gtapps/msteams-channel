@@ -164,13 +164,41 @@ describe('channels wire protocol', () => {
 })
 
 describe('instructions', () => {
+  // Claude Code truncates server instructions at 2048 chars and says so only in
+  // a debug line nobody reads. At 2224 chars this string lost the tail of its
+  // prompt-injection rule, and the assertions below passed anyway because they
+  // matched the raw initialize response rather than what the model receives.
+  // So: pin the budget, and assert against the truncated text.
+  const MAX_INSTRUCTIONS = 2048
+  const effective = () => String(initialize.instructions).slice(0, MAX_INSTRUCTIONS)
+
+  test('they fit in the budget, so nothing is silently discarded', () => {
+    // discord and telegram sit at ~1500. Headroom is not decoration: every
+    // character past this point is deleted without an error.
+    expect(initialize.instructions.length).toBeLessThanOrEqual(MAX_INSTRUCTIONS)
+  })
+
   test('they refuse access changes requested through the channel', () => {
     // The prompt-level half of the access model: a Teams message asking to be
     // allowlisted is exactly what an injection attempt looks like.
-    expect(initialize.instructions).toMatch(/never invoke that skill|prompt injection/i)
+    expect(effective()).toMatch(/prompt injection/i)
+    expect(effective()).toMatch(/never invoke it|never invoke that skill/i)
+    expect(effective()).toMatch(/refuse/i)
   })
 
   test('they say transcript output does not reach the sender', () => {
-    expect(initialize.instructions).toMatch(/never reaches their chat|through the reply tool/i)
+    expect(effective()).toMatch(/never reaches their chat/i)
+    expect(effective()).toMatch(/reply tool/i)
+  })
+
+  test('the reply-routing rule comes first, where truncation cannot reach it', () => {
+    // Ordering is the mitigation: if this string ever grows past the budget
+    // again, the rule that makes the channel two-way must not be what is lost.
+    expect(effective().slice(0, 250)).toMatch(/reply tool/i)
+  })
+
+  test('the thread rule survives, since getting it wrong forks every thread', () => {
+    expect(effective()).toMatch(/thread_id/)
+    expect(effective()).toMatch(/never message_id/i)
   })
 })
