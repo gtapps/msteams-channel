@@ -1,0 +1,14 @@
+{
+  "name": "claude-code-teams-channel",
+  "owner": {
+    "name": "gtapps"
+  },
+  "plugins": [
+    {
+      "name": "msteams",
+      "description": "Microsoft Teams channel for Claude Code — DMs and mention-gated channel messages over the Microsoft Agents SDK, with tenant/sender allowlists and pairing.",
+      "category": "productivity",
+      "source": "./"
+    }
+  ]
+}
