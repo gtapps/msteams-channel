@@ -105,9 +105,19 @@ long-lived dev host needs periodic re-login.
 curl -sL https://aka.ms/DevTunnelCliInstall | bash
 devtunnel user login          # -d for device code on a headless box
 devtunnel create hermit-msteams-dev -a
-devtunnel port create hermit-msteams-dev -p 3978 --protocol https
+devtunnel port create hermit-msteams-dev -p 3978 --protocol http
 devtunnel host hermit-msteams-dev
 ```
+
+**`--protocol http` is deliberate and easy to get wrong.** That flag describes
+the *local* hop — how devtunnel talks to your listener — not what the public URL
+serves. The public URL is HTTPS either way, because devtunnel terminates TLS at
+its edge. Setting it to `https` makes devtunnel attempt a TLS handshake against
+this plugin's plain-HTTP listener, and every request comes back **502** with
+nothing at all in the plugin's log, because the request never reaches it.
+
+If you see 502 from the public URL while `curl http://127.0.0.1:3978/api/messages`
+returns 401 locally, this is the cause.
 
 **Do not construct the tunnel URL from the tunnel ID.** The public hostname uses
 an opaque generated token, *not* the alias you pinned — a tunnel created as
@@ -184,6 +194,28 @@ az rest --method put --uri \
 ```
 
 Verify `isEnabled: true` and `provisioningState: Succeeded` in the response.
+
+## Verify the path before involving Teams
+
+Prove the whole chain reaches your listener before you go looking for problems
+in Teams. With the tunnel hosting and the plugin running, POST to the public
+URL:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  "https://<tunnel-host>/api/messages" -H 'content-type: application/json' -d '{}'
+```
+
+**401 is success here.** It means the request traversed the tunnel, reached the
+listener, and was correctly rejected for having no valid Entra token — which is
+exactly what Bot Service's traffic will do differently. Anything else:
+
+| Code | Meaning |
+|---|---|
+| 401 | Correct. Path works, JWT validation is live. |
+| 502 | Tunnel can't reach the backend — check the port protocol above, and that the plugin is actually running. |
+| 404 | Wrong path, or `MSTEAMS_WEBHOOK_PATH` doesn't match the bot's messaging endpoint. |
+| timeout | Tunnel not hosting. |
 
 ## Step 6 — Launch flags
 
