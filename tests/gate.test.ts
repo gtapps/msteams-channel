@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   gate,
+  outboundAllowed,
   mentionsBot,
   normalizeConversationId,
   normalizeSenderId,
@@ -213,6 +214,85 @@ describe('group and channel gating', () => {
       TENANT,
     )
     expect(v.allowed).toBe(true)
+  })
+})
+
+describe('outbound gate', () => {
+  const CONV = '19:abc@thread.tacv2'
+  const dmRef = { conversationId: 'a:1conv', conversationType: 'personal', senderId: SENDER }
+  const channelRef = { conversationId: CONV, conversationType: 'channel' }
+
+  test('a DM to a still-allowlisted sender is allowed', () => {
+    expect(outboundAllowed(dmRef, access({ allowFrom: [SENDER] })).allowed).toBe(true)
+  })
+
+  test('REVOCATION REVOKES OUTBOUND — the bug this predicate exists for', () => {
+    // Before this check, holding a stored conversation reference was the entire
+    // outbound gate, so `/msteams:access remove` left every outbound path
+    // working indefinitely: inbound refused while proactive sends kept landing.
+    expect(outboundAllowed(dmRef, access({ allowFrom: [] }))).toEqual({
+      allowed: false,
+      reason: 'sender_not_allowed',
+    })
+  })
+
+  test('removing a channel opt-in stops outbound to it', () => {
+    expect(outboundAllowed(channelRef, access({ groups: {} }))).toEqual({
+      allowed: false,
+      reason: 'conversation_not_opted_in',
+    })
+  })
+
+  test('an opted-in channel is allowed regardless of the DM allowlist', () => {
+    const a = access({
+      allowFrom: [],
+      groups: { [CONV]: { requireMention: true, allowFrom: [] } },
+    })
+    expect(outboundAllowed(channelRef, a).allowed).toBe(true)
+  })
+
+  test('the disabled kill switch stops outbound too', () => {
+    // Deliberately stricter than discord/telegram, whose outbound gates ignore
+    // dmPolicy. ACCESS.md documents 'disabled' as "drop everything", and a kill
+    // switch that left proactive sends flowing would contradict its own docs.
+    const off = access({
+      dmPolicy: 'disabled',
+      allowFrom: [SENDER],
+      groups: { [CONV]: { requireMention: true, allowFrom: [] } },
+    })
+    expect(outboundAllowed(dmRef, off)).toEqual({ allowed: false, reason: 'dm_disabled' })
+    expect(outboundAllowed(channelRef, off)).toEqual({ allowed: false, reason: 'dm_disabled' })
+  })
+
+  test('a personal reference with no recorded sender fails closed', () => {
+    // References written before senderId was recorded carry no identity to
+    // check, so they are refused until one inbound message repopulates them.
+    // Discord's DM branch falls through to its throw in the same situation.
+    expect(
+      outboundAllowed(
+        { conversationId: 'a:1conv', conversationType: 'personal' },
+        access({ allowFrom: [SENDER] }),
+      ),
+    ).toEqual({ allowed: false, reason: 'no_sender_identity' })
+  })
+
+  test('a thread-scoped conversation id resolves to its parent opt-in', () => {
+    const a = access({ groups: { [CONV]: { requireMention: true, allowFrom: [] } } })
+    expect(
+      outboundAllowed(
+        { conversationId: `${CONV};messageid=170000`, conversationType: 'channel' },
+        a,
+      ).allowed,
+    ).toBe(true)
+  })
+
+  test('the sender match is case-insensitive on both sides', () => {
+    expect(
+      outboundAllowed(
+        { ...dmRef, senderId: SENDER.toUpperCase() },
+        access({ allowFrom: [SENDER] }),
+      ).allowed,
+    ).toBe(true)
   })
 })
 

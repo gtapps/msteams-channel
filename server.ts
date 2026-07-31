@@ -24,6 +24,7 @@ import { IngressQueue } from './src/queue.js'
 import { ConversationStore } from './src/conversations.js'
 import {
   gate,
+  outboundAllowed,
   mentionsBot,
   normalizeSenderId,
   normalizeConversationId,
@@ -293,17 +294,28 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const conversationId = String(args.conversation_id ?? '')
   if (!conversationId) return fail('conversation_id is required')
 
-  // OUTBOUND GATE. A conversation reference exists only for conversations the
-  // inbound gate already accepted, so this is exactly "may only act where we
-  // were spoken to" — it stops a message talking the bot into posting somewhere
-  // new, which is the whole anti-exfiltration property. Every conversation-
-  // addressed tool passes through here, not just reply.
+  // OUTBOUND GATE, in two parts. A stored reference proves the inbound gate
+  // accepted this conversation once — that is the anti-exfiltration property,
+  // stopping a message from talking the bot into posting somewhere new. But it
+  // is a claim about the past, so access is re-checked against the *current*
+  // access.json as well; otherwise revoking someone would leave every outbound
+  // path working. Both parts apply to every conversation-addressed tool.
   const ref = conversations.get(conversationId)
   if (!ref) {
     process.stderr.write(
       `msteams channel: outbound refused (${req.params.name}) for unknown conversation\n`,
     )
     return fail('refused: no inbound conversation on record for that conversation_id')
+  }
+
+  const outbound = outboundAllowed(ref, loadAccess())
+  if (!outbound.allowed) {
+    process.stderr.write(
+      `msteams channel: outbound refused (${req.params.name}): ${outbound.reason}\n`,
+    )
+    return fail(
+      `refused: that conversation is no longer allowed (${outbound.reason}) — the user manages this with /msteams:access`,
+    )
   }
 
   // Teams defaults to markdown, so plain has to be asked for explicitly —
@@ -647,8 +659,27 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
   })
 
   await app.start(WEBHOOK_PORT)
+
+  // `app.start()` cannot be trusted to throw. The SDK wraps startup in a
+  // catch-all that routes to an event emitter with no listeners, so a failed
+  // bind — EADDRINUSE from a second instance, most often — is swallowed
+  // entirely. Without this check the process would print "listening", stay
+  // alive, and be permanently deaf, while every liveness signal (pidfile,
+  // state dir, credentials, and outbound sends, which do not need the port)
+  // still reads healthy. Exit instead: a dead process is recoverable by
+  // whatever supervises it, a deaf one is not, and a warning would be useless
+  // here because a running server's stderr never reaches the debug log.
+  if (adapter.port === undefined) {
+    process.stderr.write(
+      `msteams channel: FAILED to bind ${WEBHOOK_HOST}:${WEBHOOK_PORT} — nothing will arrive. ` +
+        `Another instance is probably holding the port; check with: ss -ltnp | grep ${WEBHOOK_PORT}\n`,
+    )
+    removeOwnPidFile()
+    process.exit(1)
+  }
+
   process.stderr.write(
-    `msteams channel: listening on ${WEBHOOK_HOST}:${WEBHOOK_PORT}${WEBHOOK_PATH}\n`,
+    `msteams channel: listening on ${WEBHOOK_HOST}:${adapter.port}${WEBHOOK_PATH}\n`,
   )
 
   // Anything persisted but never finished (crash between ack and dispatch)
@@ -660,6 +691,13 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
     for (const entry of pending) {
       try {
         await dispatch(entry.rawActivity)
+      } catch (err) {
+        // Must not escape: this runs at module top level, after the listener is
+        // already live, so a rejection would abort module evaluation and skip
+        // everything below — the approval poller, the tombstone timer, and every
+        // shutdown handler. The live dispatch path 20 lines above catches for the
+        // same reason; the asymmetry was the bug.
+        process.stderr.write(`msteams channel: replay failed: ${err}\n`)
       } finally {
         queue.finish(String(entry.rawActivity.id))
       }
@@ -682,14 +720,21 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
   }
 }
 
+// Only remove the pidfile if it still names this process — a failed-bind
+// cleanup or a second instance's shutdown must not delete the pidfile a
+// different, still-running instance owns.
+function removeOwnPidFile(): void {
+  try {
+    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+  } catch {}
+}
+
 let shuttingDown = false
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('msteams channel: shutting down\n')
-  try {
-    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
-  } catch {}
+  removeOwnPidFile()
   process.exit(0)
 }
 

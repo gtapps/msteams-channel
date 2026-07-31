@@ -11,9 +11,12 @@
  *   - Group chats and channels are opt-in, and gated on an explicit @mention of
  *     the bot unless the operator disables that.
  *
- * The same predicate backs the OUTBOUND gate: a reply may only target a
- * conversation this gate would have accepted inbound. That is what stops a
- * malicious message from talking the bot into posting somewhere new.
+ * `outboundAllowed()` below is the outbound counterpart: a reply may only
+ * target a conversation that is allowed *now*, which is what stops a malicious
+ * message from talking the bot into posting somewhere new. The two are
+ * deliberately separate functions — an outbound send has a stored reference
+ * rather than a live activity, so there is no tenant claim and no mention to
+ * check — and keeping them adjacent is what keeps them honest.
  */
 
 export type ConversationType = 'personal' | 'groupChat' | 'channel'
@@ -190,6 +193,50 @@ export function gate(input: GateInput, access: Access, configuredTenantId: strin
     return { allowed: false, reason: 'mention_required' }
   }
   return { allowed: true }
+}
+
+/** What an outbound send needs to know about its target. A `ConversationRef` satisfies it. */
+export type OutboundTarget = {
+  conversationId: string
+  conversationType: string
+  /** Personal conversations only, and absent on references written before it was recorded. */
+  senderId?: string
+}
+
+/**
+ * May the bot send into this conversation *right now*?
+ *
+ * Holding a stored conversation reference is not enough. A reference records
+ * that the inbound gate accepted the conversation once; it says nothing about
+ * whether the operator has since revoked that access. Before this existed, the
+ * outbound path tested only "was ever allowed", so `/msteams:access remove`,
+ * `group rm` and `policy disabled` all left every outbound path working
+ * indefinitely — inbound correctly refused while proactive sends kept landing.
+ *
+ * Both official plugins re-read access at send time for exactly this reason
+ * (telegram `assertAllowedChat`, discord `fetchAllowedChannel`). One deliberate
+ * divergence: they do not honor `dmPolicy: 'disabled'` on the outbound path,
+ * and we do — ACCESS.md documents it as "drop everything", so a kill switch
+ * that left proactive sends flowing would contradict its own description.
+ *
+ * Fail-closed on a personal conversation with no recorded sender: without one
+ * there is no identity to check against `allowFrom`, and discord's DM branch
+ * falls through to its throw in the same situation. The cost is that a
+ * reference predating this field needs one inbound message to become usable.
+ */
+export function outboundAllowed(target: OutboundTarget, access: Access): GateVerdict {
+  if (access.dmPolicy === 'disabled') return { allowed: false, reason: 'dm_disabled' }
+
+  if (target.conversationType === 'personal') {
+    if (!target.senderId) return { allowed: false, reason: 'no_sender_identity' }
+    return includesSender(access.allowFrom, normalizeSenderId(target.senderId))
+      ? { allowed: true }
+      : { allowed: false, reason: 'sender_not_allowed' }
+  }
+
+  return normalizeConversationId(target.conversationId) in access.groups
+    ? { allowed: true }
+    : { allowed: false, reason: 'conversation_not_opted_in' }
 }
 
 type MentionEntity = { type?: string; mentioned?: { id?: string } }

@@ -110,9 +110,10 @@ Listener settings, all optional:
   access.
 - **Tenant boundary**: single-tenant registration plus an explicit tenant check
   on every activity.
-- **Outbound gate**: replies, edits, and reactions can only target conversations
-  the inbound gate would have accepted — a message cannot talk the bot into
-  exfiltrating to somewhere new.
+- **Outbound gate**: replies, edits and proactive sends can only target
+  conversations that were accepted inbound *and* are still allowed by the
+  current access policy — a message cannot talk the bot into exfiltrating
+  somewhere new, and revoking access revokes it in both directions.
 - **Permission relay** reaches allowlisted DMs only; group chats are excluded.
 
 ## License

@@ -4,9 +4,10 @@
  *
  * A hermit sending a notice is not replying to anything, so there is no turn
  * context and no MCP session — just a stored conversation reference and the
- * app's own client credentials. Same outbound gate as the `reply` tool: the
- * only reachable conversations are ones the inbound gate already accepted,
- * because that is the only way a reference gets written.
+ * app's own client credentials. Same outbound gate as the `reply` tool: a
+ * conversation must both have been accepted inbound at some point (which is
+ * the only way a reference gets written) and still be allowed by the current
+ * access.json.
  *
  * **This interface is a contract surface.** The hermit integration shells out
  * to this CLI and must never parse the state dir itself, so the flags and the
@@ -30,6 +31,8 @@ import { join } from 'path'
 import { ConversationStore } from './src/conversations.js'
 import { chunkText } from './src/chunk.js'
 import { loadEnvFile } from './src/env.js'
+import { outboundAllowed } from './src/gate.js'
+import { readAccess } from './src/access.js'
 
 const STATE_DIR = process.env.MSTEAMS_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'msteams')
 
@@ -55,8 +58,16 @@ if (process.argv.includes('--list')) {
     process.stdout.write('no conversations on record — message the bot from Teams first\n')
     process.exit(0)
   }
+  // Marked against current access, not merely "a reference exists". Listing a
+  // revoked conversation as reachable would be worse than omitting it: the
+  // operator would read a positive signal and then get exit 3.
+  const listAccess = readAccess(STATE_DIR)
   for (const ref of all) {
-    process.stdout.write(`${ref.conversationId}\t${ref.conversationType}\t${ref.updatedAt}\n`)
+    const verdict = outboundAllowed(ref, listAccess)
+    const status = verdict.allowed ? 'reachable' : `unreachable:${verdict.reason}`
+    process.stdout.write(
+      `${ref.conversationId}\t${ref.conversationType}\t${status}\t${ref.updatedAt}\n`,
+    )
   }
   process.exit(0)
 }
@@ -76,19 +87,32 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
   die(2, `msteams is not configured — set credentials in ${join(STATE_DIR, '.env')} (run /msteams:configure)`)
 }
 
-// OUTBOUND GATE, identical in effect to the reply tool's: a reference exists
-// only for conversations the inbound gate accepted.
+// OUTBOUND GATE, the same two checks the reply tool runs. A stored reference
+// proves the inbound gate once accepted this conversation; re-reading access
+// proves the operator has not revoked it since. Without the second check,
+// `/msteams:access remove` would leave this CLI able to post forever.
 const ref = conversations.get(conversationId)
 if (!ref) {
   die(3, `refused: no inbound conversation on record for that id — run --list to see what is reachable`)
 }
 
+const outbound = outboundAllowed(ref, readAccess(STATE_DIR))
+if (!outbound.allowed) {
+  die(3, `refused: that conversation is no longer allowed (${outbound.reason}) — manage access with /msteams:access`)
+}
+
 const app = new App({ clientId: APP_ID, clientSecret: APP_PASSWORD, tenantId: TENANT_ID })
 const threadId = flag('thread')
 
+// Declared outside the try so a failure can report what already landed. Which
+// parts got through matters: the recipient has seen them, so re-running the
+// same command would repeat text rather than resume it. The reply tool reports
+// the same way.
+const chunks = chunkText(text)
+const ids: string[] = []
+
 try {
-  const ids: string[] = []
-  for (const chunk of chunkText(text)) {
+  for (const chunk of chunks) {
     const activity = { type: 'message', text: chunk, textFormat: 'markdown' } as any
     const sent = threadId
       ? await app.reply(ref.conversationId, threadId, activity)
@@ -98,5 +122,6 @@ try {
   process.stdout.write(`${ids.join(' ')}\n`)
   process.exit(0)
 } catch (err) {
-  die(4, `send failed: ${err instanceof Error ? err.message : String(err)}`)
+  const detail = err instanceof Error ? err.message : String(err)
+  die(4, `send failed after ${ids.length} of ${chunks.length} part(s) sent: ${detail}`)
 }

@@ -348,10 +348,18 @@ Two conditions, both in `~/.claude/channels/msteams/access.json`:
 
 ```json
 {
-  "allowConversations": ["19:<channel-thread-id>@thread.tacv2"],
-  "requireMention": true
+  "groups": {
+    "19:<channel-thread-id>@thread.tacv2": {
+      "requireMention": true,
+      "allowFrom": []
+    }
+  }
 }
 ```
+
+**Prefer the skill over hand-editing:** `/msteams:access group add
+19:…@thread.tacv2` writes exactly this, and `/msteams:access` with no arguments
+shows what is currently opted in. Full reference: [`ACCESS.md`](../ACCESS.md).
 
 The file is re-read on every inbound message, so edits take effect immediately —
 no restart.
@@ -365,13 +373,17 @@ https://teams.microsoft.com/l/channel/19%3AaEHRk…%40thread.tacv2/General?group
 ```
 
 Decode it — `%3A` is `:` and `%40` is `@` — giving
-`19:aEHRk…@thread.tacv2`. That is exactly what goes in `allowConversations`.
-This is the same approach the Discord plugin takes (Developer Mode → Copy
-Channel ID); the id comes from the client, not from the bot.
+`19:aEHRk…@thread.tacv2`. That is exactly the key under `groups`. This is the
+same approach the Discord plugin takes (Developer Mode → Copy Channel ID); the
+id comes from the client, not from the bot.
 
-Strip anything from `;messageid=` onwards if present — `allowConversations`
-holds the bare conversation id, so every thread in the channel inherits the
-opt-in.
+Strip anything from `;messageid=` onwards if present — the key is the bare
+conversation id, so every thread in the channel inherits the opt-in.
+
+`allowFrom` inside a group entry narrows *who* in that channel may drive the
+bot, by AAD object id. **Left empty, anyone in the channel can** — opting the
+channel in is itself the trust decision, matching the discord and telegram
+plugins.
 
 Group chats are the gap: unlike channels they have no shareable link, so there
 is no way to read their id from the UI. Opt-in for those is on the DM/channel
