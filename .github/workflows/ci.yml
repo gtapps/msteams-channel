@@ -1,0 +1,43 @@
+name: CI
+
+# Deliberately tenant-free. Every test here is offline: the gate, queue,
+# normalizer and adapter are pure modules; the fixtures are scrubbed captures;
+# the two spawn-a-process tests (server-contract, send) run unconfigured, and a
+# refusal returns before any credential is used. Nothing in this workflow needs
+# an Azure subscription, a Teams tenant or a tunnel — so a fork can run it, and
+# no secret is ever exposed to one.
+#
+# Live verification is the operator's smoke test in docs/SETUP.md, not CI.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned rather than 'latest': the runtime is part of what this plugin
+          # asserts about itself (Bun serves the webhook via src/bun-adapter.ts),
+          # so a runtime bump should be a visible commit, not a silent CI change.
+          bun-version: 1.3.14
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        # MSTEAMS_* is unset on purpose. If a future test starts depending on
+        # ambient credentials it fails here rather than passing locally only.
+        run: bun test

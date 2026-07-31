@@ -11,9 +11,10 @@
  */
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync } from 'fs'
+import { mkdtempSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { PERMISSION_REPLY_RE } from '../src/permissions.js'
 
 type Rpc = { id?: number; result?: any; error?: any; method?: string }
 
@@ -124,6 +125,41 @@ describe('tool surface', () => {
     const reply = tools.find(t => t.name === 'reply')
     expect(reply.inputSchema.properties.reply_to.description).toContain('thread_id')
     expect(reply.inputSchema.properties.reply_to.description).toMatch(/not pass message_id/i)
+  })
+})
+
+describe('channels wire protocol', () => {
+  // Channels is a research preview, so Plan §11 schedules a re-verification of
+  // these strings against claude-plugins-official. Last done 2026-07-31 against
+  // HEAD 4b4cd49: 100 commits since the db253f26 pin, none of them touching
+  // external_plugins/{telegram,discord,fakechat} — the reference servers are
+  // byte-identical, and every literal below matches theirs.
+  //
+  // This test guards OUR side of that agreement. A typo in a method name fails
+  // exactly like a correct name the harness ignores: in total silence.
+  const source = readFileSync(join(import.meta.dir, '..', 'server.ts'), 'utf8')
+
+  test('the notification methods are spelled exactly as the harness expects', () => {
+    expect(source).toContain("method: 'notifications/claude/channel'")
+    expect(source).toContain("z.literal('notifications/claude/channel/permission_request')")
+    expect(source).toContain("method: 'notifications/claude/channel/permission'")
+  })
+
+  test('the permission_request params match the official schema', () => {
+    for (const field of ['request_id', 'tool_name', 'description', 'input_preview']) {
+      expect(source).toContain(field)
+    }
+  })
+
+  test('a verdict is reported as {request_id, behavior}', () => {
+    expect(source).toMatch(/params:\s*\{\s*request_id:[^}]*behavior/)
+  })
+
+  test('the verdict reply grammar matches discord byte for byte', () => {
+    // Same regex, including the l-less alphabet: request ids avoid `l` so an
+    // operator never has to tell it from `1` while retyping a code.
+    expect(PERMISSION_REPLY_RE.source).toBe('^\\s*(y|yes|n|no)\\s+([a-km-z]{5})\\s*$')
+    expect(PERMISSION_REPLY_RE.flags).toContain('i')
   })
 })
 
