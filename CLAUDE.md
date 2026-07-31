@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Runtime is **Bun** (no Node, no bundler, no build step — TypeScript runs directly).
 
 ```bash
-bun test                          # whole suite (210 tests, ~1s)
+bun test                          # whole suite (245 tests, ~7s, no tenant/network)
 bun test tests/gate.test.ts       # one file
 bun test -t "outbound"            # one test by name
 bun run typecheck                 # tsc --noEmit; must pass before committing
@@ -117,5 +117,6 @@ The `/msteams:access` skill (a separate process) mutates `access.json` and drops
 
 `README.md` (enablement + security model) · `docs/SETUP.md` (provisioning runbook, every
 command executed against a real tenant) · `ACCESS.md` (operator-facing access model) ·
+`docs/E2E.md` (operator-run MVP smoke; not in CI) ·
 `docs/REACTIONS.md` · `docs/ADAPTIVE-CARDS.md` (deferred work) · `ATTRIBUTIONS.md` (OpenClaw
 MIT + official-plugin Apache-2.0 lineage that much of this is adapted from).

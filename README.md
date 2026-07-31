@@ -5,8 +5,12 @@ channel posts arrive in your session, and Claude replies in the right thread.
 Built directly on the [Microsoft Agents SDK][sdk] (`@microsoft/teams.apps`) —
 no third-party agent framework, no hosted relay, no service you don't run.
 
-> **Status: in development.** The scaffold is in place; the inbound pipeline,
-> outbound tools, and access model are landing phase by phase. Not yet usable.
+> **Status: MVP.** Inbound pipeline, outbound tools, access model and permission
+> relay are complete and were each verified against a real Teams tenant. Two
+> things are known not to work and are documented rather than hidden:
+> [reactions](docs/REACTIONS.md) (Graph exposes no application-only permission
+> for them — a permanent limitation, not a bug) and outbound file types other
+> than images under 4MB.
 
 ## How it runs
 
@@ -25,6 +29,23 @@ Microsoft Teams ──HTTPS──> your ingress (prod: reverse proxy / dev: devt
 
 Every request is validated as an Entra JWT by the Microsoft SDK before it
 reaches any of our code, so an anonymous dev tunnel is safe as a transport.
+
+## Install
+
+This repo *is* its own marketplace — the plugin lives at the repo root and
+`.claude-plugin/marketplace.json` points at it, so there is nothing else to
+clone or host:
+
+```
+/plugin marketplace add gtapps/claude-code-teams-channel
+/plugin install msteams@claude-code-teams-channel
+```
+
+A local checkout works the same way — `/plugin marketplace add <path-to-clone>`.
+
+The marketplace name `claude-code-teams-channel` is load-bearing, not cosmetic:
+it appears again in the allowlist entry and in the launch flag below, and all
+three must agree or the channel silently fails to register.
 
 ## Two-step enablement (read this before filing a bug)
 
@@ -115,6 +136,31 @@ Listener settings, all optional:
   current access policy — a message cannot talk the bot into exfiltrating
   somewhere new, and revoking access revokes it in both directions.
 - **Permission relay** reaches allowlisted DMs only; group chats are excluded.
+  Answer with `y <code>` or `n <code>`; a code is one-shot.
+
+  **The relay is dormant under `--permission-mode auto`.** Auto mode's
+  classifier decides tool calls itself and emits no permission request at all,
+  so nothing is ever relayed to Teams. This is expected, not a misconfiguration
+  — the relay only does anything in a session started with
+  `--permission-mode default`.
+
+## Development
+
+```bash
+bun test          # 245 tests, ~7s, no tenant or network required
+bun run typecheck # must pass before committing
+bun server.ts     # run the MCP server standalone; stderr is the only log
+bun send.ts --list  # proactive-send CLI: what is reachable right now
+```
+
+CI runs exactly `bun run typecheck` and `bun test` — deliberately tenant-free,
+so a fork can run it and no secret is ever exposed to one. Live verification is
+the smoke test in [`docs/E2E.md`](docs/E2E.md), which an operator runs by hand.
+
+One caveat when debugging a running session: **an MCP server's stderr reaches
+`~/.claude/debug/<session-id>.txt` only at startup.** Mid-session writes go
+nowhere, so server-side logging is a dev aid when running standalone, never
+something to ask an operator to read live.
 
 ## License
 
