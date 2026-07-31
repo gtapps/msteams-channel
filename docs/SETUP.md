@@ -338,7 +338,43 @@ the id `plugin:msteams:msteams` with no marketplace component, which
 session` notice prints whether or not registration actually succeeded. Only the
 debug log is evidence.
 
-### 6e — If messages arrive but replies fail
+### 6e — If DMs work but channel messages are ignored
+
+Channels are opt-in, and a channel that is not opted in is refused **silently**
+— telling the sender why would confirm the bot exists and leak policy. So the
+symptom is: DMs work perfectly, @-mentions in a channel do nothing at all.
+
+Two conditions, both in `~/.claude/channels/msteams/access.json`:
+
+```json
+{
+  "allowConversations": ["19:<channel-thread-id>@thread.tacv2"],
+  "requireMention": true
+}
+```
+
+The file is re-read on every inbound message, so edits take effect immediately —
+no restart.
+
+**Finding the channel id is the awkward part.** `conversations/` only records
+conversations that already passed the gate, so a refused channel leaves no trace
+there. Until `/msteams:access` lands, run the session with `--debug` and read the
+plugin's stderr, or capture one activity directly:
+
+```bash
+# with the listener stopped, catch a single POST to see the raw conversation id
+MSTEAMS_WEBHOOK_PORT=3978 bun -e 'Bun.serve({port:3978,fetch:async r=>{
+  console.log((await r.json()).conversation?.id); return new Response("",{status:200})}})'
+```
+
+Strip anything from `;messageid=` onwards — `allowConversations` holds the bare
+conversation id, so every thread in the channel inherits the opt-in.
+
+`requireMention: true` (the default) additionally means a channel post must
+@-mention the bot. A post that merely contains its name does not count; Teams
+sends a real mention entity and the gate checks for that.
+
+### 6f — If messages arrive but replies fail
 
 The opposite symptom to 6d, and a much easier one: inbound works, Claude sees the
 message, and only the send fails. The tool reports the underlying error verbatim,
