@@ -18,22 +18,61 @@
 
 export type ConversationType = 'personal' | 'groupChat' | 'channel'
 
+/**
+ * Per-conversation policy for a group chat or channel, keyed on the normalized
+ * conversation id. Shape matches discord's `groups` and telegram's equivalent.
+ *
+ * **`allowFrom: []` means anyone in that conversation may speak to the bot** —
+ * it does not fall back to the top-level `allowFrom`. That is deliberate and it
+ * is how both official plugins behave: opting a channel in is itself the trust
+ * decision, because requiring every colleague to separately pair by DM would
+ * make a shared channel unusable. Narrow it by listing AAD object ids here.
+ */
+export type GroupPolicy = {
+  /** Require an @mention of the bot in this conversation. */
+  requireMention: boolean
+  /** Lowercased AAD object ids. Empty = any sender in this conversation. */
+  allowFrom: string[]
+}
+
+/**
+ * A pairing code awaiting `/msteams:access pair`. Defined here rather than in
+ * access.ts: access.ts already imports Access from this file, and a type import
+ * in the other direction would make gate.ts — meant to stay the pure half —
+ * depend back on the stateful one.
+ */
+export type PendingEntry = {
+  senderId: string
+  /**
+   * The DM conversation id to confirm into. Teams personal conversation ids are
+   * distinct from the sender's AAD object id, so — exactly as discord does for
+   * its DM channel ids — it has to be stashed at issue time. By the time the
+   * approval file appears, `pending` has already been cleared.
+   */
+  conversationId: string
+  createdAt: number
+  expiresAt: number
+  replies: number
+}
+
 export type Access = {
   /** How unknown senders are treated in 1:1 chats. */
   dmPolicy: 'pairing' | 'allowlist' | 'disabled'
-  /** Lowercased AAD object ids allowed to talk to the bot. */
+  /** Lowercased AAD object ids allowed to DM the bot. */
   allowFrom: string[]
-  /** Normalized conversation ids the operator opted in (groups/channels). */
-  allowConversations: string[]
-  /** Require an @mention of the bot in group/channel conversations. */
-  requireMention: boolean
+  /** Opted-in group chats and channels, keyed on normalized conversation id. */
+  groups: Record<string, GroupPolicy>
+  /** Live pairing codes, keyed by code. Managed by src/access.ts. */
+  pending: Record<string, PendingEntry>
+  /** Extra regexes that count as addressing the bot, beyond a real @mention. */
+  mentionPatterns?: string[]
 }
 
 export const DEFAULT_ACCESS: Access = {
   dmPolicy: 'pairing',
   allowFrom: [],
-  allowConversations: [],
-  requireMention: true,
+  groups: {},
+  pending: {},
 }
 
 export type GateVerdict =
@@ -89,6 +128,17 @@ export function normalizeSenderId(aadObjectId: string): string {
   return aadObjectId.trim().toLowerCase()
 }
 
+/**
+ * Membership test for an allowlist of AAD object ids.
+ *
+ * Both sides are normalized, not just the incoming activity: a GUID copied from
+ * the Azure portal or typed by hand can carry any case, and an allowlist entry
+ * that silently never matches is a lockout the operator cannot see.
+ */
+function includesSender(list: string[], sender: string): boolean {
+  return list.some(entry => normalizeSenderId(entry) === sender)
+}
+
 export type GateInput = {
   tenantId?: string
   conversationId: string
@@ -110,23 +160,33 @@ export function gate(input: GateInput, access: Access, configuredTenantId: strin
     // cannot pin an identity to. Refuse rather than fall back to a name.
     return { allowed: false, reason: 'no_sender_identity' }
   }
+  // 'disabled' is a global kill switch, not just a DM setting — it drops
+  // channels and allowlisted senders too. Named for the common case but
+  // deliberately total, matching discord and telegram: an operator reaching for
+  // it wants the bot off, and a kill switch that left channels answering would
+  // fail in the dangerous direction.
+  if (access.dmPolicy === 'disabled') return { allowed: false, reason: 'dm_disabled' }
+
   const sender = normalizeSenderId(input.senderAadObjectId)
-  const senderAllowed = access.allowFrom.includes(sender)
+  const senderAllowed = includesSender(access.allowFrom, sender)
 
   if (input.conversationType === 'personal') {
-    if (access.dmPolicy === 'disabled') return { allowed: false, reason: 'dm_disabled' }
     // Under 'pairing' an unknown sender is still refused here; the pairing
     // handshake runs alongside the gate and adds them to allowFrom on approval.
     return senderAllowed ? { allowed: true } : { allowed: false, reason: 'sender_not_allowed' }
   }
 
-  // Group chat or channel.
+  // Group chat or channel. The conversation must be opted in; who may speak in
+  // it is then that conversation's own business (see GroupPolicy).
   const conversation = normalizeConversationId(input.conversationId)
-  if (!access.allowConversations.includes(conversation)) {
-    return { allowed: false, reason: 'conversation_not_opted_in' }
+  const policy = access.groups[conversation]
+  if (!policy) return { allowed: false, reason: 'conversation_not_opted_in' }
+
+  const groupAllowFrom = policy.allowFrom ?? []
+  if (groupAllowFrom.length > 0 && !includesSender(groupAllowFrom, sender)) {
+    return { allowed: false, reason: 'sender_not_allowed' }
   }
-  if (!senderAllowed) return { allowed: false, reason: 'sender_not_allowed' }
-  if (access.requireMention && !input.mentionsBot) {
+  if ((policy.requireMention ?? true) && !input.mentionsBot) {
     return { allowed: false, reason: 'mention_required' }
   }
   return { allowed: true }
@@ -135,13 +195,39 @@ export function gate(input: GateInput, access: Access, configuredTenantId: strin
 type MentionEntity = { type?: string; mentioned?: { id?: string } }
 
 /**
- * A mention counts only when the mentioned id is the bot's own id (the
+ * Whether this activity addresses the bot.
+ *
+ * A real mention counts only when the mentioned id is the bot's own id (the
  * activity `recipient.id`) — matching on the display name would let anyone
  * trigger the bot by typing its name as plain text.
+ *
+ * `extraPatterns` widens that: operator-supplied regexes tested against the
+ * message text, for teams who would rather write "claude, ..." than @-mention.
+ * They come from access.json, which only the operator can edit from a terminal,
+ * so they are trusted input; an invalid pattern is skipped rather than thrown,
+ * matching discord's `isMentioned`.
  */
-export function mentionsBot(entities: unknown, recipientId: string | undefined): boolean {
-  if (!Array.isArray(entities) || !recipientId) return false
-  return entities.some(
-    (e: MentionEntity) => e?.type === 'mention' && e?.mentioned?.id === recipientId,
-  )
+export function mentionsBot(
+  entities: unknown,
+  recipientId: string | undefined,
+  text?: string,
+  extraPatterns?: string[],
+): boolean {
+  if (
+    Array.isArray(entities) &&
+    recipientId &&
+    entities.some((e: MentionEntity) => e?.type === 'mention' && e?.mentioned?.id === recipientId)
+  ) {
+    return true
+  }
+
+  if (!text) return false
+  for (const pattern of extraPatterns ?? []) {
+    try {
+      if (new RegExp(pattern, 'i').test(text)) return true
+    } catch {
+      // A malformed regex disables that one pattern, not the whole gate.
+    }
+  }
+  return false
 }

@@ -7,6 +7,7 @@ import {
   DEFAULT_ACCESS,
   type Access,
   type GateInput,
+  type GroupPolicy,
 } from '../src/gate.js'
 
 const TENANT = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
@@ -105,6 +106,30 @@ describe('dm policy', () => {
     const v = gate(dm(), access({ dmPolicy: 'pairing' }), TENANT)
     expect(v).toEqual({ allowed: false, reason: 'sender_not_allowed' })
   })
+
+  test('disabled is a global kill switch, not just a DM setting', () => {
+    // Matches discord, whose ACCESS.md states it plainly: "Drop everything,
+    // including allowlisted users and guild channels." An operator reaching for
+    // this wants the bot off; leaving channels answering would fail in the
+    // dangerous direction.
+    const off = access({
+      dmPolicy: 'disabled',
+      allowFrom: [SENDER],
+      groups: { '19:abc@thread.tacv2': { requireMention: false, allowFrom: [] } },
+    })
+    expect(gate(dm(), off, TENANT)).toEqual({ allowed: false, reason: 'dm_disabled' })
+    expect(
+      gate(
+        dm({
+          conversationType: 'groupChat',
+          conversationId: '19:abc@thread.tacv2',
+          mentionsBot: true,
+        }),
+        off,
+        TENANT,
+      ),
+    ).toEqual({ allowed: false, reason: 'dm_disabled' })
+  })
 })
 
 describe('group and channel gating', () => {
@@ -116,49 +141,108 @@ describe('group and channel gating', () => {
     expect(v).toEqual({ allowed: false, reason: 'conversation_not_opted_in' })
   })
 
+  const opted = (policy: Partial<GroupPolicy> = {}) =>
+    access({
+      allowFrom: [SENDER],
+      groups: { '19:abc@thread.tacv2': { requireMention: true, allowFrom: [], ...policy } },
+    })
+
   test('an opted-in conversation with a mention passes', () => {
-    const v = gate(
-      group({ mentionsBot: true }),
-      access({ allowFrom: [SENDER], allowConversations: ['19:abc@thread.tacv2'] }),
-      TENANT,
-    )
-    expect(v.allowed).toBe(true)
+    expect(gate(group({ mentionsBot: true }), opted(), TENANT).allowed).toBe(true)
   })
 
   test('an opted-in conversation without a mention is refused', () => {
-    const v = gate(
-      group({ mentionsBot: false }),
-      access({ allowFrom: [SENDER], allowConversations: ['19:abc@thread.tacv2'] }),
-      TENANT,
-    )
+    const v = gate(group({ mentionsBot: false }), opted(), TENANT)
     expect(v).toEqual({ allowed: false, reason: 'mention_required' })
   })
 
-  test('requireMention off allows an unmentioned message in an opted-in conversation', () => {
-    const v = gate(
-      group({ mentionsBot: false }),
-      access({ allowFrom: [SENDER], allowConversations: ['19:abc@thread.tacv2'], requireMention: false }),
-      TENANT,
-    )
+  test('requireMention is per-conversation, not global', () => {
+    // The whole point of the groups restructure: quiet in one channel,
+    // mention-gated in another, within one access.json.
+    const both = access({
+      allowFrom: [SENDER],
+      groups: {
+        '19:abc@thread.tacv2': { requireMention: false, allowFrom: [] },
+        '19:other@thread.tacv2': { requireMention: true, allowFrom: [] },
+      },
+    })
+    expect(gate(group({ mentionsBot: false }), both, TENANT).allowed).toBe(true)
+    expect(
+      gate(group({ conversationId: '19:other@thread.tacv2', mentionsBot: false }), both, TENANT),
+    ).toEqual({ allowed: false, reason: 'mention_required' })
+  })
+
+  test('an empty group allowFrom admits any sender in that conversation', () => {
+    // Matches discord and telegram: opting the conversation in IS the trust
+    // decision. Requiring every colleague to pair by DM first would make a
+    // shared channel unusable. Note this is looser than the DM path, where an
+    // unknown sender is always refused.
+    const v = gate(group({ mentionsBot: true, senderAadObjectId: 'someone-else' }), opted(), TENANT)
     expect(v.allowed).toBe(true)
   })
 
-  test('opting in a conversation does not admit a non-allowlisted sender', () => {
-    const v = gate(
-      group({ mentionsBot: true, senderAadObjectId: 'someone-else' }),
-      access({ allowFrom: [SENDER], allowConversations: ['19:abc@thread.tacv2'] }),
-      TENANT,
-    )
-    expect(v).toEqual({ allowed: false, reason: 'sender_not_allowed' })
+  test('a non-empty group allowFrom narrows to exactly those senders', () => {
+    const narrowed = opted({ allowFrom: [SENDER] })
+    expect(gate(group({ mentionsBot: true }), narrowed, TENANT).allowed).toBe(true)
+    expect(
+      gate(group({ mentionsBot: true, senderAadObjectId: 'someone-else' }), narrowed, TENANT),
+    ).toEqual({ allowed: false, reason: 'sender_not_allowed' })
+  })
+
+  test('the group allowFrom matches case-insensitively in both directions', () => {
+    // AAD object ids are GUIDs and arrive in whatever case the source used. An
+    // allowlist entry that silently never matches is a lockout the operator
+    // cannot see, so both sides are normalized — not just the activity.
+    expect(
+      gate(
+        group({ mentionsBot: true, senderAadObjectId: SENDER.toUpperCase() }),
+        opted({ allowFrom: [SENDER] }),
+        TENANT,
+      ).allowed,
+    ).toBe(true)
+    expect(
+      gate(group({ mentionsBot: true }), opted({ allowFrom: [SENDER.toUpperCase()] }), TENANT)
+        .allowed,
+    ).toBe(true)
   })
 
   test('a thread reply matches its parent conversation opt-in', () => {
     const v = gate(
       group({ conversationId: '19:abc@thread.tacv2;messageid=170000', mentionsBot: true }),
-      access({ allowFrom: [SENDER], allowConversations: ['19:abc@thread.tacv2'] }),
+      opted(),
       TENANT,
     )
     expect(v.allowed).toBe(true)
+  })
+})
+
+describe('mentionPatterns', () => {
+  // access.json persists these and the access skill offers `set mentionPatterns`,
+  // so a version of mentionsBot() that ignored them would ship a documented
+  // feature with no consumer — the exact "documented but absent" trap telegram's
+  // ACCESS.md falls into.
+  test('an operator pattern counts as addressing the bot', () => {
+    expect(mentionsBot([], BOT, 'claude, what is up', ['^claude\\b'])).toBe(true)
+  })
+
+  test('patterns are case-insensitive', () => {
+    expect(mentionsBot([], BOT, 'Claude, hello', ['^claude\\b'])).toBe(true)
+  })
+
+  test('text not matching any pattern is not a mention', () => {
+    expect(mentionsBot([], BOT, 'talking amongst ourselves', ['^claude\\b'])).toBe(false)
+  })
+
+  test('a real mention still wins with no patterns configured', () => {
+    expect(mentionsBot([{ type: 'mention', mentioned: { id: BOT } }], BOT, 'hi')).toBe(true)
+  })
+
+  test('a malformed pattern disables itself, not the whole gate', () => {
+    expect(mentionsBot([], BOT, 'claude hello', ['(unclosed', '^claude\\b'])).toBe(true)
+  })
+
+  test('patterns need text to match against', () => {
+    expect(mentionsBot([], BOT, undefined, ['^claude\\b'])).toBe(false)
   })
 })
 

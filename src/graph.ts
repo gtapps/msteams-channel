@@ -11,12 +11,12 @@
  *    Framework conversation id cannot produce — hence the ids captured on the
  *    conversation reference. Chats use `/chats/{id}/messages/{id}`.
  *    (OpenClaw MIT 32b2e161a5a, `graph-messages.ts:97` resolveConversationPath.)
- * 3. **Writes require a *delegated* token.** OpenClaw passes
- *    `preferDelegated: true` for exactly this call. We authenticate with
- *    single-tenant client credentials — an *application* token — and delegated
- *    auth is explicitly out of MVP scope. So this may be unavailable no matter
- *    what the operator grants, which is why the failure text says so instead of
- *    only naming a permission to add.
+ * 3. **Writes require a *delegated* token — so this cannot work here.**
+ *    `setReaction` accepts no application permission at all (RSC included), and
+ *    we authenticate with single-tenant client credentials. Graph reports that
+ *    as 412. OpenClaw passes `preferDelegated: true` at exactly two call sites
+ *    in its codebase, both of them reactions. Full evidence and the open
+ *    remove-vs-keep decision: `docs/REACTIONS.md`.
  *
  * Everything here degrades: a hermit that cannot add a thumbs-up is mildly
  * worse; one that fails to reply is broken.
@@ -93,25 +93,21 @@ export function describeGraphFailure(err: unknown): string {
   if (status === 401 || status === 403) {
     return (
       'reactions were refused. Graph requires a delegated (signed-in user) token to set a ' +
-      'reaction, and this channel authenticates as the application — so this may not be ' +
-      'available at all until delegated auth is supported. If you want to try anyway, grant ' +
-      'ChatMessage.ReadWrite.All (application) in Entra and admin-consent it. Everything else ' +
-      'in this channel works without reactions.'
+      'reaction, and this channel authenticates as the application. No application permission ' +
+      'grants this — see docs/REACTIONS.md. Everything else in this channel works without ' +
+      'reactions.'
     )
   }
-  // Observed live 2026-07-31 with an application token: Graph accepts the
-  // token (not 401/403) and resolves the message (not 404), then refuses the
-  // operation. Cause not conclusively established — either a reaction must be
-  // attributed to a signed-in user, or the app needs resource-specific consent
-  // declared in the Teams app manifest. Both are named so the operator can try
-  // the fixable one rather than assume it is hopeless.
+  // Observed live 2026-07-31, then settled against the docs: 412 is Graph's
+  // status for "this API has no application-only form". setReaction accepts no
+  // application permission of any kind, RSC included, so there is nothing the
+  // operator can grant or declare. See docs/REACTIONS.md.
   if (status === 412) {
     return (
-      'Graph accepted the request but refused to set the reaction (412). The application token ' +
-      'is authenticated, so this is not a missing Entra grant. Either reactions require a ' +
-      'delegated (signed-in user) token, which this channel does not use, or the app needs ' +
-      'resource-specific consent in its Teams manifest (authorization.permissions.resourceSpecific). ' +
-      'Reactions are optional — everything else works without them.'
+      'reactions are unavailable. Setting a reaction requires a delegated (signed-in user) ' +
+      'token and this channel authenticates as the application, which Graph refuses for this ' +
+      'operation. No Entra grant or manifest change fixes it. Everything else works without ' +
+      'reactions.'
     )
   }
   if (status === 404) {

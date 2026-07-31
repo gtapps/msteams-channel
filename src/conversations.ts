@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, renameSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { createHash } from 'crypto'
-import { normalizeConversationId } from './gate.js'
+import { normalizeConversationId, normalizeSenderId } from './gate.js'
 
 export const CONVERSATION_VERSION = 1
 
@@ -33,6 +33,15 @@ export type ConversationRef = {
    */
   teamId?: string
   channelId?: string
+  /**
+   * 1:1 chats only: the AAD object id on the other end, lowercased.
+   *
+   * The permission relay has to find "the DM belonging to this allowlisted
+   * sender", and a Teams personal conversation id is not derivable from an AAD
+   * object id. Recorded only for `personal` conversations — in a group the
+   * sender is whoever spoke last, which would be meaningless here.
+   */
+  senderId?: string
   updatedAt: string
 }
 
@@ -48,10 +57,11 @@ export class ConversationStore {
     const rawId = String(activity.conversation?.id ?? '')
     if (!rawId) return undefined
     const conversationId = normalizeConversationId(rawId)
+    const conversationType = String(activity.conversation?.conversationType ?? 'personal')
     const ref: ConversationRef = {
       version: CONVERSATION_VERSION,
       conversationId,
-      conversationType: String(activity.conversation?.conversationType ?? 'personal'),
+      conversationType,
       tenantId: String(activity.channelData?.tenant?.id ?? activity.conversation?.tenantId ?? ''),
       serviceUrl: String(activity.serviceUrl ?? ''),
       botId: activity.recipient?.id ? String(activity.recipient.id) : undefined,
@@ -62,6 +72,10 @@ export class ConversationStore {
       channelId: activity.channelData?.teamsChannelId
         ? String(activity.channelData.teamsChannelId)
         : undefined,
+      senderId:
+        conversationType === 'personal' && activity.from?.aadObjectId
+          ? normalizeSenderId(String(activity.from.aadObjectId))
+          : undefined,
       updatedAt: new Date().toISOString(),
     }
     const target = fileFor(this.dir, conversationId)

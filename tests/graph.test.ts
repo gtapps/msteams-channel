@@ -118,15 +118,20 @@ describe('degrading', () => {
     expect(describeGraphFailure({ response: { status: 401 } })).toContain('delegated')
   })
 
-  test('a 412 names both possible causes rather than guessing one', () => {
-    // Observed against a live tenant. The token was accepted and the message
-    // resolved, so telling the operator to grant an Entra permission would be
-    // wrong; one of the two named causes is actionable and one is not.
+  test('a 412 says reactions are unavailable, not that something can be fixed', () => {
+    // Observed against a live tenant, then settled: setReaction accepts no
+    // application permission of any kind, RSC included, so any text sending the
+    // operator to Entra or to the Teams manifest wastes their time. See
+    // docs/REACTIONS.md.
     const reason = describeGraphFailure({ response: { status: 412 } })
 
     expect(reason).toContain('delegated')
-    expect(reason).toContain('resourceSpecific')
-    expect(reason).not.toMatch(/grant ChatMessage\.ReadWrite\.All/)
+    expect(reason).toContain('unavailable')
+    // No dead end to chase: neither the manifest nor an Entra grant is offered
+    // as a remedy. (Saying "no Entra grant fixes it" is the point, so match on
+    // the imperative forms rather than the bare words.)
+    expect(reason).not.toContain('resourceSpecific')
+    expect(reason).not.toMatch(/grant \w+\.\w+|admin-consent/)
   })
 
   test('a 404 says the message is gone, not that consent is missing', () => {

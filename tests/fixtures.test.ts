@@ -146,7 +146,7 @@ describe('gate over real activities', () => {
         senderAadObjectId: CHANNEL_REPLY.from.aadObjectId,
         mentionsBot: mentionsBot(CHANNEL_REPLY.entities, CHANNEL_REPLY.recipient.id),
       },
-      { ...access, allowConversations: [conversation], requireMention: true },
+      { ...access, groups: { [conversation]: { requireMention: true, allowFrom: [] } } },
       TENANT,
     )
     expect(verdict.allowed).toBe(true)
