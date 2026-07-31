@@ -118,6 +118,17 @@ describe('degrading', () => {
     expect(describeGraphFailure({ response: { status: 401 } })).toContain('delegated')
   })
 
+  test('a 412 names both possible causes rather than guessing one', () => {
+    // Observed against a live tenant. The token was accepted and the message
+    // resolved, so telling the operator to grant an Entra permission would be
+    // wrong; one of the two named causes is actionable and one is not.
+    const reason = describeGraphFailure({ response: { status: 412 } })
+
+    expect(reason).toContain('delegated')
+    expect(reason).toContain('resourceSpecific')
+    expect(reason).not.toMatch(/grant ChatMessage\.ReadWrite\.All/)
+  })
+
   test('a 404 says the message is gone, not that consent is missing', () => {
     expect(describeGraphFailure({ response: { status: 404 } })).toContain('could not be found')
   })

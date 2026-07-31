@@ -392,13 +392,25 @@ so read it rather than guessing.
 | `AADSTS7000229: … missing service principal in the tenant …` | The service principal was never created. Run `az ad sp create --id <app-id>` (step 4). This is the common one for a manual registration. |
 | `AADSTS7000215: Invalid client secret` | The credential in `.env` is wrong or expired. Reset it per step 4 — and check nothing quoted it. |
 | `AADSTS700016: Application not found in the directory` | `MSTEAMS_APP_ID` does not match the registration, or you are pointed at the wrong tenant. |
-| `401` / `403` from a `react` call only | Not a configuration error at all — reactions need a Graph permission. See below. |
+| `412` from `react` | Graph authenticated the app and found the message, then refused. Either reactions need a delegated (signed-in user) token, or the app needs resource-specific consent in its Teams manifest. Observed with an application token against a live tenant. Not a missing Entra grant. |
+| `401` / `403` from a `react` call only | Reactions need a Graph permission the app lacks. See below. |
 | `refused: no inbound conversation on record` | Working as designed. The bot may only reply where it was spoken to; message it from Teams first. |
 
-Reactions degrade on purpose. `react` needs `ChatMessage.ReadWrite.All`
-(application) granted and admin-consented in Entra; without it the tool returns a
-message saying so, and every other feature keeps working. Granting it is
-optional.
+**Reactions are the one capability not confirmed working.** Against a live
+tenant with an application token, Graph returns 412: it accepts the token and
+resolves the message, then refuses the operation. So this is *not* fixed by
+granting an Entra permission. Two candidate causes, only one of them fixable
+without delegated auth:
+
+- reactions may require a **delegated** (signed-in user) token, since a reaction
+  is attributed to a person and an application token has no user identity — this
+  is what OpenClaw's msteams extension assumes; or
+- the app may need **resource-specific consent** declared in its Teams manifest
+  (`authorization.permissions.resourceSpecific`), which is separate from Entra
+  API permissions.
+
+Everything else in this channel works without reactions, and the tool degrades
+with the message above rather than failing obscurely.
 
 ## Production ingress
 

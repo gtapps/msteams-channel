@@ -99,6 +99,21 @@ export function describeGraphFailure(err: unknown): string {
       'in this channel works without reactions.'
     )
   }
+  // Observed live 2026-07-31 with an application token: Graph accepts the
+  // token (not 401/403) and resolves the message (not 404), then refuses the
+  // operation. Cause not conclusively established — either a reaction must be
+  // attributed to a signed-in user, or the app needs resource-specific consent
+  // declared in the Teams app manifest. Both are named so the operator can try
+  // the fixable one rather than assume it is hopeless.
+  if (status === 412) {
+    return (
+      'Graph accepted the request but refused to set the reaction (412). The application token ' +
+      'is authenticated, so this is not a missing Entra grant. Either reactions require a ' +
+      'delegated (signed-in user) token, which this channel does not use, or the app needs ' +
+      'resource-specific consent in its Teams manifest (authorization.permissions.resourceSpecific). ' +
+      'Reactions are optional — everything else works without them.'
+    )
+  }
   if (status === 404) {
     return 'that message could not be found — it may be too old, or in a conversation the app cannot read'
   }
