@@ -28,29 +28,52 @@ reaches any of our code, so an anonymous dev tunnel is safe as a transport.
 
 ## Two-step enablement (read this before filing a bug)
 
-Installing the plugin is **not** enough. The session must also be launched with
-the channel flag:
+Installing the plugin is **not** enough. Two more things are required, both
+verified against Claude Code v2.1.220.
+
+**1. Admit the plugin to the channel allowlist** (root, once per machine).
+Claude Code's default allowlist is exactly the channel plugins in
+`anthropics/claude-plugins-official`, so a third-party channel needs an explicit
+entry:
 
 ```bash
-claude --channels plugin:msteams@claude-code-teams-channel \
-       --dangerously-load-development-channels plugin:msteams@claude-code-teams-channel
+sudo mkdir -p /etc/claude-code
+sudo tee /etc/claude-code/managed-settings.json >/dev/null <<'EOF'
+{"channelsEnabled":true,"allowedChannelPlugins":[
+  {"marketplace":"claude-code-teams-channel","plugin":"msteams"}]}
+EOF
 ```
 
-Notes, both verified against Claude Code v2.1.220:
+This list **replaces** the default allowlist rather than extending it, so any
+other channel you use must be listed alongside it.
 
-- `--dangerously-load-development-channels` **takes the server list as its
-  argument**. It is not a bare flag — omitting the value fails at launch.
-- Neither flag appears in `claude --help`.
-- Without `--channels`, inbound messages are **dropped silently**: no reply, no
-  banner, no error, nothing in the log. That is the protocol's normal failure
-  mode, not a bug in this plugin. If Teams messages seem to vanish, check the
-  flag first.
+**2. Launch with the channel flag:**
 
-The `--dangerously-load-development-channels` requirement is not optional
-today: Claude Code's default channel allowlist is exactly the channel plugins
-in `anthropics/claude-plugins-official`, and that repository auto-closes
-third-party pull requests. Until this plugin is adopted upstream, every install
-needs the development flag (or an enterprise `allowedChannelPlugins` policy).
+```bash
+claude --channels plugin:msteams@claude-code-teams-channel
+```
+
+That is the entire command — no `--plugin-dir`, no `--mcp-config`, and no
+`--dangerously-load-development-channels`. `--channels` does not appear in
+`claude --help`.
+
+Two things worth knowing before you debug anything:
+
+- **Inbound events are dropped silently** when the channel is not registered: no
+  reply, no error, nothing in this plugin's log, because the message never
+  reaches it. That is the protocol's normal failure mode, not a bug here.
+- **The `Channels (experimental)` startup banner is cosmetic** — it prints
+  whether or not registration succeeded. The only evidence is the
+  `Channel notifications skipped:` line in `~/.claude/debug/<session-id>.txt`,
+  which names the exact cause.
+
+**`--dangerously-load-development-channels` does not work on v2.1.220.** The
+published docs present it as the way to test an unpublished channel, but it never
+registers the entry and its documented confirmation dialog never appears —
+confirmed against Anthropic's own `fakechat` server under a non-allowlisted name,
+which fails the same way. Use the managed-settings route above.
+
+Full walkthrough and a failure-mode table: [`docs/SETUP.md`](docs/SETUP.md#step-6--enabling-the-channel).
 
 ## Setup
 

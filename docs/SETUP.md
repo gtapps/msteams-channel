@@ -217,27 +217,107 @@ exactly what Bot Service's traffic will do differently. Anything else:
 | 404 | Wrong path, or `MSTEAMS_WEBHOOK_PATH` doesn't match the bot's messaging endpoint. |
 | timeout | Tunnel not hosting. |
 
-## Step 6 — Launch flags
+## Step 6 — Enabling the channel
 
-Installing the plugin is not enough. Both flags are required, and **neither
-appears in `claude --help`**:
+Installing the plugin is not enough, and this is the step most likely to waste
+an afternoon. Everything below was established empirically on Claude Code
+**v2.1.220**; where it contradicts the published channels reference, the observed
+behavior is what is recorded.
+
+### 6a — Install at local scope
 
 ```bash
-claude --channels plugin:msteams@<marketplace> \
-       --dangerously-load-development-channels plugin:msteams@<marketplace>
+claude plugin marketplace add /path/to/claude-code-teams-channel
+claude plugin install msteams@claude-code-teams-channel --scope local
 ```
 
-`--dangerously-load-development-channels` **takes the server list as its
-argument** — it is not a bare companion flag, and omitting the value kills the
-session at launch with `option ... argument missing`.
+**Local scope, not user scope.** A channel plugin's MCP server is spawned by
+every session that loads it. At user scope every Claude Code session on the
+machine starts its own copy, and because this one binds a fixed webhook port they
+evict each other — so the process holding the port is not the one attached to
+your session, and inbound events land nowhere visible.
 
-Without `--channels`, inbound messages are **dropped silently**: no reply, no
-banner, no error, nothing in any log. Verified on Claude Code v2.1.220. If
-messages seem to vanish, check this first.
+### 6b — Admit the plugin to the channel allowlist
 
-The development flag is required because Claude Code's default channel allowlist
-is exactly the channel plugins in `anthropics/claude-plugins-official`, and that
-repo auto-closes third-party pull requests.
+Claude Code's default allowlist is exactly the channel plugins in
+`anthropics/claude-plugins-official`, and that repo auto-closes third-party pull
+requests. A third-party channel is admitted through managed settings, which
+requires root:
+
+```bash
+sudo mkdir -p /etc/claude-code
+sudo tee /etc/claude-code/managed-settings.json >/dev/null <<'EOF'
+{"channelsEnabled":true,"allowedChannelPlugins":[
+  {"marketplace":"claude-code-teams-channel","plugin":"msteams"}]}
+EOF
+```
+
+> **This list replaces the default allowlist — it does not extend it.** Any other
+> channel you rely on (`discord`, `voice`, …) must be listed here too, or it
+> silently stops receiving messages. Add entries, never swap them.
+
+On Team and Enterprise plans this is the same `allowedChannelPlugins` an admin
+sets centrally.
+
+### 6c — Launch
+
+```bash
+claude --channels plugin:msteams@claude-code-teams-channel
+```
+
+That is the whole command. **Do not** add `--plugin-dir`, `--mcp-config`, or
+`--dangerously-load-development-channels`. `--channels` does not appear in
+`claude --help`.
+
+**`--dangerously-load-development-channels` does not work on v2.1.220.** The
+published docs present it as the route for testing an unpublished channel, but it
+never enters the entry into the session's channel list and the documented
+full-screen "I am using this for local development" dialog never appears. This
+was confirmed against Anthropic's own `fakechat` server copied into a private
+marketplace under a different name, which fails identically — so it is not a
+defect in this plugin. Use the managed-settings route above.
+
+### 6d — If messages still vanish
+
+Inbound events are dropped **silently** — no reply, no error, nothing in this
+plugin's log, because the message never reaches it. There is exactly one place
+that tells you why:
+
+```bash
+grep "Channel notifications" ~/.claude/debug/<session-id>.txt
+```
+
+Run `claude --debug` to get that path. The line names the precise cause:
+
+| Log line | Cause |
+|---|---|
+| `not in --channels list for this session` | The entry never resolved to an installed plugin — usually a shadowed server, see below. |
+| `not on the approved channels allowlist` | Step 6b missing or the plugin is absent from `allowedChannelPlugins`. |
+| `you asked for plugin:msteams@X but the installed msteams plugin is from Y` | Wrong marketplace name in `--channels`. Use the name from `claude plugin marketplace list`. |
+| `server did not declare claude/channel capability` | Not this plugin — that line appears for every ordinary MCP server. |
+
+**The most expensive trap: a stale `--mcp-config` or project `.mcp.json` that
+also defines an `msteams` server.** Claude Code silently prefers it and suppresses
+the plugin's own server:
+
+```
+Suppressing plugin MCP server "plugin:msteams:msteams": duplicates manually-configured "msteams"
+```
+
+The listener then runs happily under the id `server:msteams` — accepting real
+Teams traffic, writing to the queue — while `--channels plugin:msteams@…` refers
+to a server that no longer exists. Everything looks healthy and nothing is
+delivered. Delete the stray config and relaunch.
+
+`--plugin-dir` causes the same class of failure for a different reason: it yields
+the id `plugin:msteams:msteams` with no marketplace component, which
+`plugin:msteams@claude-code-teams-channel` can never match. Install properly
+(6a) instead.
+
+**Do not trust the startup banner.** The dim
+`Channels (experimental) messages from plugin:msteams@… inject directly in this
+session` notice prints whether or not registration actually succeeded. Only the
+debug log is evidence.
 
 ## Production ingress
 
