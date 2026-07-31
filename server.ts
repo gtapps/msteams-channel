@@ -24,6 +24,7 @@ import { ConversationStore } from './src/conversations.js'
 import { gate, mentionsBot, DEFAULT_ACCESS, type Access, type ConversationType } from './src/gate.js'
 import { normalize } from './src/normalize.js'
 import { chunkText } from './src/chunk.js'
+import { buildImageAttachment, MAX_ATTACHMENTS, type Attachment } from './src/attach.js'
 
 const STATE_DIR = process.env.MSTEAMS_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'msteams')
 const INBOX_DIR = join(STATE_DIR, 'inbox')
@@ -143,6 +144,12 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             description:
               "Rendering mode. Default 'markdown' — Teams renders bold, italic, code and links. Pass 'plain' when the text must appear literally (it contains * or _ that are not formatting).",
           },
+          files: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Absolute paths to images to attach (png, jpg, gif, webp, bmp; under 4MB each, up to 10 per reply), sent after the text. Teams only accepts images this way — attaching any other file type, a larger image, or too many, fails with an explanation, so paste other content into the message instead.',
+          },
         },
         required: ['conversation_id', 'text'],
       },
@@ -177,33 +184,62 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     return fail('refused: no inbound conversation on record for that conversation_id')
   }
 
+  // Build every attachment BEFORE sending anything. A file that fails
+  // validation halfway through would otherwise leave the text already
+  // delivered and the sender waiting on an image that never arrives.
+  const files = Array.isArray(args.files) ? args.files.map(String) : []
+  if (files.length > MAX_ATTACHMENTS) {
+    return fail(
+      `refused: ${files.length} files exceeds the ${MAX_ATTACHMENTS}-attachment limit per reply — split into separate messages`,
+    )
+  }
+  let attachments: Attachment[]
+  try {
+    attachments = files.map(f => buildImageAttachment(f, STATE_DIR))
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err))
+  }
+
+  // Captured because narrowing from the `!teamsApp` guard above does not reach
+  // into a closure — teamsApp is a mutable module-level binding.
+  const app = teamsApp
+  const dispatch = (activity: any) =>
+    threadId ? app.reply(ref.conversationId, threadId, activity) : app.send(ref.conversationId, activity)
+
   const chunks = chunkText(text)
   const sentIds: string[] = []
   try {
     for (const chunk of chunks) {
-      const activity = { type: 'message', text: chunk, textFormat } as any
-      const sent = threadId
-        ? await teamsApp.reply(ref.conversationId, threadId, activity)
-        : await teamsApp.send(ref.conversationId, activity)
+      const sent = await dispatch({ type: 'message', text: chunk, textFormat })
+      if (sent?.id) sentIds.push(String(sent.id))
+    }
+
+    // Attachments follow the text as their own activities, matching the
+    // telegram plugin — Teams renders an image with a caption inconsistently.
+    for (const attachment of attachments) {
+      const sent = await dispatch({ type: 'message', attachments: [attachment] })
       if (sent?.id) sentIds.push(String(sent.id))
     }
   } catch (err) {
     process.stderr.write(`msteams channel: reply failed: ${err}\n`)
     const detail = err instanceof Error ? err.message : String(err)
-    // Which chunks landed matters: the sender has already seen them, so a
+    // Which parts landed matters: the sender has already seen them, so a
     // blind retry would repeat text rather than resume it.
-    return fail(`send failed after ${sentIds.length} of ${chunks.length} chunk(s) sent: ${detail}`)
+    return fail(
+      `send failed after ${sentIds.length} of ${chunks.length + attachments.length} part(s) sent: ${detail}`,
+    )
   }
 
   const ids = sentIds.join(', ')
+  const parts = chunks.length + attachments.length
   return {
     content: [
       {
         type: 'text' as const,
         text:
-          chunks.length === 1
+          parts === 1
             ? `sent (id: ${ids || 'unknown'})`
-            : `sent ${chunks.length} parts (ids: ${ids || 'unknown'})`,
+            : `sent ${parts} parts (ids: ${ids || 'unknown'})`,
       },
     ],
   }
