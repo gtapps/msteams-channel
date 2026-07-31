@@ -61,6 +61,10 @@ const APP_PASSWORD = process.env.MSTEAMS_APP_PASSWORD
 const TENANT_ID = process.env.MSTEAMS_TENANT_ID
 const WEBHOOK_PORT = Number(process.env.MSTEAMS_WEBHOOK_PORT ?? 3978)
 const WEBHOOK_PATH = (process.env.MSTEAMS_WEBHOOK_PATH ?? '/api/messages') as `/${string}`
+// Loopback by default so only the operator's proxy or tunnel is reachable. In a
+// container, loopback is the *container's* — a host-side proxy cannot reach it,
+// so a containerized deploy must set this (0.0.0.0) and publish the port.
+const WEBHOOK_HOST = process.env.MSTEAMS_WEBHOOK_HOST ?? '127.0.0.1'
 
 // A stale process from a crashed session still holds the webhook port, so the
 // next session's listener would fail to bind. Evict it before we start.
@@ -182,6 +186,7 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
   )
 } else {
   const adapter = new BunHttpAdapter({
+    hostname: WEBHOOK_HOST,
     onError: err => process.stderr.write(`msteams channel: ingress error: ${err}\n`),
   })
   const app = new App({
@@ -204,7 +209,9 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
   })
 
   await app.start(WEBHOOK_PORT)
-  process.stderr.write(`msteams channel: listening on 127.0.0.1:${WEBHOOK_PORT}${WEBHOOK_PATH}\n`)
+  process.stderr.write(
+    `msteams channel: listening on ${WEBHOOK_HOST}:${WEBHOOK_PORT}${WEBHOOK_PATH}\n`,
+  )
 
   // Anything persisted but never finished (crash between ack and dispatch)
   // replays now, without needing a live turn context.

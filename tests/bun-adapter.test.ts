@@ -131,6 +131,16 @@ describe('binding', () => {
     expect((await fetch(URL, { method: 'POST', headers: AUTH, body: '{}' })).status).toBe(200)
   })
 
+  test('hostname is configurable — a container must be able to bind 0.0.0.0', async () => {
+    // Loopback inside a container is the container's own; a host-side reverse
+    // proxy cannot reach it, so a containerized deploy has to widen the bind.
+    adapter = new BunHttpAdapter({ hostname: '0.0.0.0' })
+    adapter.registerRoute('POST', '/api/messages', ok)
+    await adapter.start(PORT)
+    const res = await fetch(URL, { method: 'POST', headers: AUTH, body: '{}' })
+    expect(res.status).toBe(200)
+  })
+
   test('stop releases the port', async () => {
     await serve(ok)
     await adapter!.stop()

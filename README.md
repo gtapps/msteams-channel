@@ -66,6 +66,14 @@ pairing and allowlists.
 Credentials live only in `~/.claude/channels/msteams/.env` (mode 0600), never
 in argv or logs. Override the state dir with `MSTEAMS_STATE_DIR`.
 
+Listener settings, all optional:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `MSTEAMS_WEBHOOK_PORT` | `3978` | One port per bot; several can share a host behind one proxy. |
+| `MSTEAMS_WEBHOOK_PATH` | `/api/messages` | Must match the bot's messaging endpoint. |
+| `MSTEAMS_WEBHOOK_HOST` | `127.0.0.1` | **Set to `0.0.0.0` in Docker** — loopback inside a container is the container's own, so a host-side proxy can't reach it. Publish the port too. |
+
 ## Security model
 
 - **Transport auth**: Entra JWT validation by the Microsoft SDK — never
