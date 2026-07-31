@@ -23,6 +23,7 @@ import { IngressQueue } from './src/queue.js'
 import { ConversationStore } from './src/conversations.js'
 import { gate, mentionsBot, DEFAULT_ACCESS, type Access, type ConversationType } from './src/gate.js'
 import { normalize } from './src/normalize.js'
+import { chunkText } from './src/chunk.js'
 
 const STATE_DIR = process.env.MSTEAMS_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'msteams')
 const INBOX_DIR = join(STATE_DIR, 'inbox')
@@ -115,14 +116,61 @@ const mcp = new Server(
   },
 )
 
-// Outbound tools land in Phase 3 (reply / edit_message / react /
-// download_attachment), each behind the outbound gate.
-mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }))
+// Assigned once credentials are present and the Teams App is constructed.
+let teamsApp: App | undefined
 
-mcp.setRequestHandler(CallToolRequestSchema, async req => ({
-  content: [{ type: 'text', text: `unknown tool: ${req.params.name}` }],
-  isError: true,
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: 'reply',
+      description:
+        'Send a message back to a Microsoft Teams conversation. Pass the conversation_id from the inbound <channel> tag. Set reply_to to a message_id to answer inside that thread.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          conversation_id: { type: 'string', description: 'From the inbound tag' },
+          text: { type: 'string', description: 'Message to send' },
+          reply_to: { type: 'string', description: 'message_id to reply to, for threading' },
+        },
+        required: ['conversation_id', 'text'],
+      },
+    },
+  ],
 }))
+
+mcp.setRequestHandler(CallToolRequestSchema, async req => {
+  const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true })
+
+  if (req.params.name !== 'reply') return fail(`unknown tool: ${req.params.name}`)
+  if (!teamsApp) return fail('msteams is not configured — no credentials in the state dir')
+
+  const conversationId = String(args.conversation_id ?? '')
+  const text = String(args.text ?? '')
+  const replyTo = args.reply_to ? String(args.reply_to) : undefined
+  if (!conversationId || !text) return fail('conversation_id and text are required')
+
+  // OUTBOUND GATE. A conversation reference exists only for conversations the
+  // inbound gate already accepted, so this is exactly "may only reply where we
+  // were spoken to" — it stops a message talking the bot into posting somewhere
+  // new, which is the whole anti-exfiltration property.
+  const ref = conversations.get(conversationId)
+  if (!ref) {
+    process.stderr.write(`msteams channel: outbound refused for unknown conversation\n`)
+    return fail('refused: no inbound conversation on record for that conversation_id')
+  }
+
+  try {
+    for (const chunk of chunkText(text)) {
+      if (replyTo) await teamsApp.reply(ref.conversationId, replyTo, chunk as any)
+      else await teamsApp.send(ref.conversationId, chunk as any)
+    }
+    return { content: [{ type: 'text' as const, text: 'sent' }] }
+  } catch (err) {
+    process.stderr.write(`msteams channel: reply failed: ${err}\n`)
+    return fail(`send failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+})
 
 await mcp.connect(new StdioServerTransport())
 
@@ -196,6 +244,7 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
     httpServerAdapter: adapter,
     messagingEndpoint: WEBHOOK_PATH,
   })
+  teamsApp = app
 
   app.on('message', async ({ activity }: { activity: Record<string, any> }) => {
     // Persist BEFORE acking. A throw here propagates out of the adapter as a
