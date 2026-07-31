@@ -143,6 +143,25 @@ APPID=$(az ad app create \
   --query appId -o tsv)
 ```
 
+**Now create the service principal. Do not skip this** — it is the step whose
+absence costs the most time:
+
+```bash
+az ad sp create --id "$APPID"
+```
+
+`az ad app create` registers the application; it does not create the *enterprise
+application* (service principal) that lets your tenant issue tokens to it. The
+Teams CLI does this as a side effect of its own provisioning, so a manual
+registration is the case that misses it.
+
+Nothing fails until the bot's first outbound message, long after everything
+looks correct: inbound messages arrive normally, the gate passes, Claude sees
+them and composes a reply — and only the send fails, with
+`AADSTS7000229: The client application <app-id> is missing service principal in
+the tenant <tenant-id>`. Requires tenant admin. Reversible with
+`az ad sp delete --id "$APPID"`.
+
 Generate the client credential straight into the state dir. **Never pass it in
 argv and never echo it** — argv is world-readable in `/proc` on Linux:
 
@@ -318,6 +337,25 @@ the id `plugin:msteams:msteams` with no marketplace component, which
 `Channels (experimental) messages from plugin:msteams@… inject directly in this
 session` notice prints whether or not registration actually succeeded. Only the
 debug log is evidence.
+
+### 6e — If messages arrive but replies fail
+
+The opposite symptom to 6d, and a much easier one: inbound works, Claude sees the
+message, and only the send fails. The tool reports the underlying error verbatim,
+so read it rather than guessing.
+
+| Error | Cause |
+|---|---|
+| `AADSTS7000229: … missing service principal in the tenant …` | The service principal was never created. Run `az ad sp create --id <app-id>` (step 4). This is the common one for a manual registration. |
+| `AADSTS7000215: Invalid client secret` | The credential in `.env` is wrong or expired. Reset it per step 4 — and check nothing quoted it. |
+| `AADSTS700016: Application not found in the directory` | `MSTEAMS_APP_ID` does not match the registration, or you are pointed at the wrong tenant. |
+| `401` / `403` from a `react` call only | Not a configuration error at all — reactions need a Graph permission. See below. |
+| `refused: no inbound conversation on record` | Working as designed. The bot may only reply where it was spoken to; message it from Teams first. |
+
+Reactions degrade on purpose. `react` needs `ChatMessage.ReadWrite.All`
+(application) granted and admin-consented in Entra; without it the tool returns a
+message saying so, and every other feature keeps working. Granting it is
+optional.
 
 ## Production ingress
 
