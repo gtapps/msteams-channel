@@ -152,16 +152,40 @@ after the second instructions fix.
 | 3 inbound attachments | **pass** (after finding 2) |
 | 4 outbound image + refusals | **pass** |
 | 5 `edit_message`, `react` 412 | **pass** |
-| 6 pairing and revocation | **NOT RUN** — needs a second Teams account |
+| 6 pairing and revocation | **pass** — run without a second account, see below |
 | 7 proactive CLI send | **pass** — `--list` marking correct, `--text` and stdin both exit 0 with ids, unknown conversation exit 3 without sending |
 | 8 permission verdict | **pass** — request relayed to the DM, `y <code>` honoured |
 
-**7 of 8 pass. Leg 6 is the gap, and it is not a small one.** It is the only leg
-exercising the pairing handshake end to end, and the only live proof that
-revoking access stops *inbound*. The outbound half of revocation is covered
-offline (`tests/send.test.ts`, "a stored reference is NOT sufficient once access
-is revoked"), but the pairing flow and a live post-revocation drop have no
-coverage beyond the Phase 4 smoke. **Run leg 6 before calling this MVP-complete.**
+**8 of 8 pass.**
+
+Leg 6 needs an unknown sender, which looks like it needs a second Teams account.
+It does not: set `dmPolicy` to `pairing` and remove your own AAD object id from
+`allowFrom`, and you become a stranger to your own bot. That exercises the whole
+leg with one account — only genuinely-different-person cases (another human
+pairing, per-sender allowlists inside a channel) stay out of reach, and neither
+is on the MVP path.
+
+Observed, in order:
+
+1. `send.ts` to the revoked DM → **exit 3** `sender_not_allowed`, with no
+   restart. The gate re-read `access.json` on the spot. This is the
+   anti-exfiltration property: a stored conversation reference is a claim about
+   the past, not standing authority.
+2. `--list` flipped that conversation to `unreachable:sender_not_allowed` while
+   both channels stayed `reachable` — correct, since a group with
+   `allowFrom: []` admits anyone in it and only DMs were revoked.
+3. A DM from the now-unknown sender produced a 6-hex pairing code **in Teams and
+   nothing in the session** — the revoked-inbound drop, exercised at the same time.
+4. Writing `approved/<senderId>` with the conversation id as its contents was
+   consumed by the server in **~1s** (poll interval is ~5s), and the "Paired!"
+   confirmation went out.
+5. `send.ts` to the same DM → **exit 0** with a message id. Outbound restored.
+
+The one thing worth noting for anyone repeating this: the id `send.ts` wants is
+the Bot Framework conversation id from `--list` (`a:1...`), not the
+`19:...@unq.gbl.spaces` id in a Teams chat deep link. Passing the latter exits 3
+with "no inbound conversation on record", which is correct but reads like a
+gate refusal rather than a wrong-id-space mistake.
 
 Leg 3 also confirmed the multi-attachment fix against the live tenant: two images
 in one message both arrived and both were readable — precisely the case that
@@ -204,4 +228,4 @@ prompt is itself relayed to Teams. The circularity is harmless — verdicts are
 intercepted on the inbound path, which does not depend on the tool being gated —
 but approving `reply` once at the start makes the run much less tedious.
 
-Last full pass: _not yet complete_ — 7 of 8, leg 6 outstanding.
+Last full pass: **2026-07-31, 8 of 8** (legs 1–2 on `cf26d90`, the rest on `8f26992`).
