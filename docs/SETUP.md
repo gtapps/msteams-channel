@@ -246,8 +246,8 @@ behavior is what is recorded.
 ### 6a — Install at local scope
 
 ```bash
-claude plugin marketplace add /path/to/claude-code-teams-channel
-claude plugin install msteams@claude-code-teams-channel --scope local
+claude plugin marketplace add /path/to/claude-code-msteams-channel
+claude plugin install msteams@claude-code-msteams-channel --scope local
 ```
 
 **Local scope, not user scope.** A channel plugin's MCP server is spawned by
@@ -267,7 +267,7 @@ requires root:
 sudo mkdir -p /etc/claude-code
 sudo tee /etc/claude-code/managed-settings.json >/dev/null <<'EOF'
 {"channelsEnabled":true,"allowedChannelPlugins":[
-  {"marketplace":"claude-code-teams-channel","plugin":"msteams"}]}
+  {"marketplace":"claude-code-msteams-channel","plugin":"msteams"}]}
 EOF
 ```
 
@@ -281,7 +281,7 @@ sets centrally.
 ### 6c — Launch
 
 ```bash
-claude --channels plugin:msteams@claude-code-teams-channel
+claude --channels plugin:msteams@claude-code-msteams-channel
 ```
 
 That is the whole command. **Do not** add `--plugin-dir`, `--mcp-config`, or
@@ -330,7 +330,7 @@ delivered. Delete the stray config and relaunch.
 
 `--plugin-dir` causes the same class of failure for a different reason: it yields
 the id `plugin:msteams:msteams` with no marketplace component, which
-`plugin:msteams@claude-code-teams-channel` can never match. Install properly
+`plugin:msteams@claude-code-msteams-channel` can never match. Install properly
 (6a) instead.
 
 **Do not trust the startup banner.** The dim

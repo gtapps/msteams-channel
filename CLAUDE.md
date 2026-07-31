@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Runtime is **Bun** (no Node, no bundler, no build step — TypeScript runs directly).
 
 ```bash
-bun test                          # whole suite (245 tests, ~7s, no tenant/network)
+bun test                          # whole suite (248 tests, ~8s, no tenant/network)
 bun test tests/gate.test.ts       # one file
 bun test -t "outbound"            # one test by name
 bun run typecheck                 # tsc --noEmit; must pass before committing
@@ -16,7 +16,7 @@ bun send.ts --list                # proactive-send CLI: list reachable conversat
 ```
 
 Running the plugin for real needs two things beyond installing it — a managed-settings
-allowlist entry and `claude --channels plugin:msteams@claude-code-teams-channel`. See
+allowlist entry and `claude --channels plugin:msteams@claude-code-msteams-channel`. See
 README.md "Two-step enablement"; without both, inbound events are dropped **silently**.
 
 ## Architecture

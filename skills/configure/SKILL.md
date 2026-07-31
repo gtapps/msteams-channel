@@ -122,7 +122,7 @@ documents.
   provisioning: an `allowedChannelPlugins` entry in
   `/etc/claude-code/managed-settings.json` (root-written; that list *replaces*
   the default, so every channel already in use must be re-listed) plus launching
-  with `--channels plugin:msteams@claude-code-teams-channel`. If the user says
+  with `--channels plugin:msteams@claude-code-msteams-channel`. If the user says
   the bot is running but nothing reaches the session, that is where to look —
   `docs/SETUP.md` § 6d has the diagnosis, which starts at the
   `Channel notifications skipped:` line in `~/.claude/debug/<session-id>.txt`.

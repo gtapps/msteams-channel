@@ -37,13 +37,13 @@ This repo *is* its own marketplace — the plugin lives at the repo root and
 clone or host:
 
 ```
-/plugin marketplace add gtapps/claude-code-teams-channel
-/plugin install msteams@claude-code-teams-channel
+/plugin marketplace add gtapps/claude-code-msteams-channel
+/plugin install msteams@claude-code-msteams-channel
 ```
 
 A local checkout works the same way — `/plugin marketplace add <path-to-clone>`.
 
-The marketplace name `claude-code-teams-channel` is load-bearing, not cosmetic:
+The marketplace name `claude-code-msteams-channel` is load-bearing, not cosmetic:
 it appears again in the allowlist entry and in the launch flag below, and all
 three must agree or the channel silently fails to register.
 
@@ -61,7 +61,7 @@ entry:
 sudo mkdir -p /etc/claude-code
 sudo tee /etc/claude-code/managed-settings.json >/dev/null <<'EOF'
 {"channelsEnabled":true,"allowedChannelPlugins":[
-  {"marketplace":"claude-code-teams-channel","plugin":"msteams"}]}
+  {"marketplace":"claude-code-msteams-channel","plugin":"msteams"}]}
 EOF
 ```
 
@@ -71,7 +71,7 @@ other channel you use must be listed alongside it.
 **2. Launch with the channel flag:**
 
 ```bash
-claude --channels plugin:msteams@claude-code-teams-channel
+claude --channels plugin:msteams@claude-code-msteams-channel
 ```
 
 That is the entire command — no `--plugin-dir`, no `--mcp-config`, and no
@@ -147,7 +147,7 @@ Listener settings, all optional:
 ## Development
 
 ```bash
-bun test          # 245 tests, ~7s, no tenant or network required
+bun test          # 248 tests, ~8s, no tenant or network required
 bun run typecheck # must pass before committing
 bun server.ts     # run the MCP server standalone; stderr is the only log
 bun send.ts --list  # proactive-send CLI: what is reachable right now
