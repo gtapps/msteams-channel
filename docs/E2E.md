@@ -147,8 +147,27 @@ blocker unless it is one of the two documented known-impossible items
 | Leg | Result |
 |---|---|
 | 1 DM → threaded reply | **pass** (after the instructions fix below) |
+| 2 channel mention → threaded reply | **pass** |
+| 3 inbound attachments | **partial** — delivery correct, reply not routed |
 | 8 permission request relayed to Teams | **pass** — arrived in the DM |
-| 2–7, and the `y <code>` verdict | not yet run |
+| 4–7, and the `y <code>` verdict | not yet run |
+
+**Leg 3 confirmed the multi-attachment fix on a live tenant**: two images in one
+message both arrived and both were readable. That is precisely the case that
+previously delivered one and dropped the other with no count and no listing.
+
+**But the model answered in the transcript again, and this time the pattern is
+legible.** Legs 1 and 2 were single-response turns and routed to `reply`
+correctly. Leg 3 required `Read` calls first — and the reply never came. The
+attachment instruction ended on a *local* action ("just Read it") with no return
+path, so the turn read as complete once the files had been read. Two sentences
+added: a general rule in the opening paragraph that a turn beginning with a
+Teams message is not finished until `reply` has been called, however many tools
+ran in between, and a closing line on the attachment paragraph that reading a
+file is not answering. 1841 chars, still inside the 2048 budget.
+
+This is a hypothesis with a mechanism, not a proven cause — re-run leg 3 after a
+session restart to confirm.
 
 Leg 1 failed on the first attempt against `b25dfce`: the message was delivered
 (`notifications/claude/channel` in the debug log) but the model answered in the
