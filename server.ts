@@ -248,9 +248,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   }
 
   if (req.params.name === 'react') {
+    // Not cast to any: the cast here is what let a wrong GraphClient shape
+    // reach production, so the type must be checked at this boundary.
     const verdict = await react(
-      teamsApp.graph as any,
-      ref.conversationId,
+      teamsApp.graph,
+      { conversationId: ref.conversationId, teamId: ref.teamId, channelId: ref.channelId },
       String(args.message_id ?? ''),
       String(args.reaction ?? ''),
     )

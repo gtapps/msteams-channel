@@ -25,6 +25,14 @@ export type ConversationRef = {
   serviceUrl: string
   botId?: string
   botName?: string
+  /**
+   * Channels only. Graph addresses a channel message as
+   * `/teams/{teamId}/channels/{channelId}/messages/...`, which the Bot
+   * Framework conversation id alone cannot produce — so capture both while the
+   * activity is in front of us.
+   */
+  teamId?: string
+  channelId?: string
   updatedAt: string
 }
 
@@ -48,6 +56,12 @@ export class ConversationStore {
       serviceUrl: String(activity.serviceUrl ?? ''),
       botId: activity.recipient?.id ? String(activity.recipient.id) : undefined,
       botName: activity.recipient?.name ? String(activity.recipient.name) : undefined,
+      teamId: activity.channelData?.team?.aadGroupId
+        ? String(activity.channelData.team.aadGroupId)
+        : undefined,
+      channelId: activity.channelData?.teamsChannelId
+        ? String(activity.channelData.teamsChannelId)
+        : undefined,
       updatedAt: new Date().toISOString(),
     }
     const target = fileFor(this.dir, conversationId)

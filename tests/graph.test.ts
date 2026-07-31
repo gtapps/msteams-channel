@@ -1,28 +1,68 @@
 import { test, expect, describe } from 'bun:test'
 import { react, describeGraphFailure, reactionEndpoint, isGraphReaction, type GraphLike } from '../src/graph.js'
 
-/** A GraphClient that records what it was asked, or fails on cue. */
-function fakeGraph(behaviour?: () => never): { graph: GraphLike; calls: { path: string; body: unknown }[] } {
-  const calls: { path: string; body: unknown }[] = []
+/**
+ * A stand-in for the SDK's GraphClient.
+ *
+ * Typed as `GraphLike` deliberately: the first version of this file invented a
+ * `.api()` fluent shape, tested a fake that matched the invention, and passed
+ * while the real call failed with "graph.api is not a function". A fake only
+ * proves anything if the same type is checked where the real client is passed
+ * in — which `server.ts` now does without a cast.
+ */
+function fakeGraph(fail?: () => never): { graph: GraphLike; calls: { url: string; body: unknown }[] } {
+  const calls: { url: string; body: unknown }[] = []
   return {
     calls,
     graph: {
-      api: (path: string) => ({
-        post: async (body: unknown) => {
-          calls.push({ path, body })
-          if (behaviour) behaviour()
-          return {}
+      http: {
+        post: async (url: string, data?: unknown) => {
+          calls.push({ url, body: data })
+          if (fail) fail()
+          return { status: 200 }
         },
-      }),
+      },
     },
   }
 }
+
+const CHAT = { conversationId: 'a:1personal' }
+const CHANNEL = {
+  conversationId: '19:abc@thread.tacv2;messageid=111',
+  teamId: '59e7c505-802c-476a-9452-bfe8b5a8c2ea',
+  channelId: '19:abc@thread.tacv2',
+}
+
+describe('addressing', () => {
+  test('a chat message is addressed under /chats', () => {
+    expect(reactionEndpoint(CHAT, '999')).toContain('/chats/')
+  })
+
+  test('a channel message is addressed under /teams/.../channels', () => {
+    // Graph cannot reach a channel message via the conversation id, so getting
+    // this wrong is a 404 rather than an obvious failure.
+    const url = reactionEndpoint(CHANNEL, '999')
+    expect(url).toContain(`/teams/${encodeURIComponent(CHANNEL.teamId)}/channels/`)
+    expect(url).not.toContain('/chats/')
+  })
+
+  test('the thread suffix never reaches Graph', () => {
+    // The reaction targets a message, not a thread.
+    expect(reactionEndpoint({ conversationId: '19:x@thread.tacv2;messageid=999' }, '111')).not.toContain(
+      'messageid',
+    )
+  })
+
+  test('it targets beta, where setReaction actually exists', () => {
+    expect(reactionEndpoint(CHAT, '999')).toStartWith('https://graph.microsoft.com/beta/')
+  })
+})
 
 describe('react', () => {
   test('posts the reaction to the message endpoint', async () => {
     const { graph, calls } = fakeGraph()
 
-    const result = await react(graph, '19:abc@thread.tacv2', '1785517947373', 'like')
+    const result = await react(graph, CHAT, '1785517947373', 'like')
 
     expect(result).toEqual({ ok: true })
     expect(calls).toHaveLength(1)
@@ -32,44 +72,54 @@ describe('react', () => {
   test('an unsupported reaction is refused before any network call', async () => {
     const { graph, calls } = fakeGraph()
 
-    const result = await react(graph, '19:abc@thread.tacv2', '1', '🚀')
-
-    expect(result.ok).toBe(false)
+    expect((await react(graph, CHAT, '1', '🚀')).ok).toBe(false)
     expect(calls).toHaveLength(0)
   })
 
-  test('the thread suffix is stripped from the conversation id', () => {
-    // The reaction targets a message, not a thread, so ;messageid= would
-    // address the wrong resource.
-    expect(reactionEndpoint('19:abc@thread.tacv2;messageid=999', '111')).not.toContain('messageid')
+  test('a missing message id is refused before any network call', async () => {
+    const { graph, calls } = fakeGraph()
+
+    expect((await react(graph, CHAT, '', 'like')).ok).toBe(false)
+    expect(calls).toHaveLength(0)
   })
 
-  test('only Graph\'s own reaction names are accepted', () => {
+  test("only Graph's own reaction names are accepted", () => {
     expect(isGraphReaction('like')).toBe(true)
     expect(isGraphReaction('thumbsup')).toBe(false)
   })
 })
 
-describe('degrading without consent', () => {
-  test('a 403 names the permission to grant rather than leaking a stack', async () => {
-    // This is the whole point of the degradable design: an operator who never
-    // granted the Graph scope gets told what to do, and everything else works.
+describe('degrading', () => {
+  test('a 403 explains that reactions need a delegated token, not just a grant', async () => {
+    // The whole point: Graph requires a signed-in-user token for setReaction
+    // and this channel authenticates as the application, so telling the
+    // operator to grant a permission would send them somewhere that may not
+    // fix it.
     const { graph } = fakeGraph(() => {
-      throw new Error('Request failed with status code 403')
+      throw Object.assign(new Error('Request failed'), { response: { status: 403 } })
     })
 
-    const result = await react(graph, '19:abc@thread.tacv2', '1', 'like')
+    const result = await react(graph, CHAT, '1', 'like')
 
     expect(result.ok).toBe(false)
-    expect((result as { reason: string }).reason).toContain('ChatMessage.ReadWrite.All')
+    expect((result as { reason: string }).reason).toContain('delegated')
   })
 
-  test('a 401 is treated the same as a 403', () => {
-    expect(describeGraphFailure(new Error('401 Unauthorized'))).toContain('ChatMessage.ReadWrite.All')
+  test('the status is read from the error object, not scraped from its text', () => {
+    // A message containing a stray number must not be mistaken for a status.
+    const reason = describeGraphFailure(
+      Object.assign(new Error('conversation 404040 unavailable'), { response: { status: 503 } }),
+    )
+    expect(reason).not.toContain('delegated')
+    expect(reason).toContain('conversation 404040')
+  })
+
+  test('a 401 is treated like a 403', () => {
+    expect(describeGraphFailure({ response: { status: 401 } })).toContain('delegated')
   })
 
   test('a 404 says the message is gone, not that consent is missing', () => {
-    expect(describeGraphFailure(new Error('404 Not Found'))).toContain('could not be found')
+    expect(describeGraphFailure({ response: { status: 404 } })).toContain('could not be found')
   })
 
   test('anything else is reported verbatim rather than guessed at', () => {
