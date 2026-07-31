@@ -13,6 +13,9 @@
  * hermit: charts, screenshots and diagrams are images. So that is what we
  * implement, and the other two return an explanation rather than failing
  * obscurely — the same "degradable" stance the plan takes for `react`.
+ *
+ * Not `src/attachments.ts`: that one handles INBOUND attachments (classifying
+ * and fetching what senders sent). This one only builds outbound payloads.
  */
 
 import { readFileSync, realpathSync, statSync } from 'fs'
