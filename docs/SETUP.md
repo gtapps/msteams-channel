@@ -356,19 +356,26 @@ Two conditions, both in `~/.claude/channels/msteams/access.json`:
 The file is re-read on every inbound message, so edits take effect immediately —
 no restart.
 
-**Finding the channel id is the awkward part.** `conversations/` only records
-conversations that already passed the gate, so a refused channel leaves no trace
-there. Until `/msteams:access` lands, run the session with `--debug` and read the
-plugin's stderr, or capture one activity directly:
+**Teams hands you the channel id.** In Teams, open the channel's **⋯ → Copy
+link**. The URL contains the conversation id, URL-encoded:
 
-```bash
-# with the listener stopped, catch a single POST to see the raw conversation id
-MSTEAMS_WEBHOOK_PORT=3978 bun -e 'Bun.serve({port:3978,fetch:async r=>{
-  console.log((await r.json()).conversation?.id); return new Response("",{status:200})}})'
+```
+https://teams.microsoft.com/l/channel/19%3AaEHRk…%40thread.tacv2/General?groupId=…
+                                      └──── the conversation id ────┘
 ```
 
-Strip anything from `;messageid=` onwards — `allowConversations` holds the bare
-conversation id, so every thread in the channel inherits the opt-in.
+Decode it — `%3A` is `:` and `%40` is `@` — giving
+`19:aEHRk…@thread.tacv2`. That is exactly what goes in `allowConversations`.
+This is the same approach the Discord plugin takes (Developer Mode → Copy
+Channel ID); the id comes from the client, not from the bot.
+
+Strip anything from `;messageid=` onwards if present — `allowConversations`
+holds the bare conversation id, so every thread in the channel inherits the
+opt-in.
+
+Group chats are the gap: unlike channels they have no shareable link, so there
+is no way to read their id from the UI. Opt-in for those is on the DM/channel
+path only for now.
 
 `requireMention: true` (the default) additionally means a channel post must
 @-mention the bot. A post that merely contains its name does not count; Teams
