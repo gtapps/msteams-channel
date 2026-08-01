@@ -13,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["server.ts", "src/**/*.ts", "tests/**/*.ts"]
+  "include": ["server.ts", "send.ts", "src/**/*.ts", "tests/**/*.ts"]
 }

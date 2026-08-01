@@ -131,8 +131,9 @@ The `/msteams:access` skill (a separate process) mutates `access.json` and drops
 command executed against a real tenant) · `ACCESS.md` (operator-facing access model) ·
 `TROUBLESHOOTING.md` (symptom-first setup diagnostics) · `docs/REACTIONS.md` (public
 limitation) · `CONTRIBUTING.md` (dev setup; why `bun run dev` and not `start`) ·
-`SECURITY.md` (what counts as a vulnerability here) · `ATTRIBUTIONS.md` (OpenClaw MIT +
-official-plugin Apache-2.0 lineage that much of this is adapted from). Live E2E procedure,
+`SECURITY.md` (what counts as a vulnerability here). Attribution for adapted OpenClaw (MIT)
+and official-plugin (Apache-2.0) code lives in source headers at each point of use —
+keep those headers when editing the files that carry them. Live E2E procedure,
 runs and deferred feature designs are private Hermit compiled topics, never public docs.
 
 Releases go through `/release` (`.claude/skills/release/SKILL.md`) — the version lives in

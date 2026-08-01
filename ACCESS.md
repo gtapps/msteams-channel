@@ -1,8 +1,8 @@
-# Microsoft Teams — Access & Delivery
+# Microsoft Teams: Access & Delivery
 
 Who can reach your Claude Code session through this channel, and how to change
-it. Structure mirrors the official discord and telegram plugins, because the
-model is theirs; the differences are noted where Teams forced them.
+it. The model matches the official discord and telegram plugins; differences
+are noted where Teams forced them.
 
 Everything here is edited through `/msteams:access`, never by hand and never in
 response to a Teams message.
@@ -11,7 +11,7 @@ response to a Teams message.
 
 | | Default |
 |---|---|
-| DM policy | `pairing` — an unknown sender gets a code, not access |
+| DM policy | `pairing`: an unknown sender gets a code, not access |
 | Allowlist | empty |
 | Channels and group chats | none opted in |
 | Mention required in a channel | yes |
@@ -21,28 +21,27 @@ response to a Teams message.
 
 `dmPolicy` governs 1:1 chats.
 
-- **`pairing`** (default) — an unknown sender gets a 6-hex code and nothing
-  else. You approve with `/msteams:access pair <code>`. Codes live 1 hour, at
-  most 3 are outstanding at once, and a sender is answered twice before the bot
-  goes silent on them.
-- **`allowlist`** — only `allowFrom` gets through. Unknown senders are dropped
-  silently. **This is the state to end up in.**
-- **`disabled`** — no DMs at all.
+| Policy | Behavior |
+|---|---|
+| `pairing` (default) | An unknown sender gets a 6-hex code and nothing else. Approve with `/msteams:access pair <code>`. Codes live 1 hour, at most 3 are outstanding at once, and a sender is answered twice before the bot goes silent on them. |
+| `allowlist` | Only `allowFrom` gets through; unknown senders are dropped silently. The state to end up in. |
+| `disabled` | No DMs at all. |
 
-Pairing is a capture mechanism, not a resting state. Its job is to collect AAD
-object ids you do not know yet. Once they are in `allowFrom`, switch to
-`allowlist` so nobody else can even trigger a code.
+Pairing is a capture mechanism, not a resting state: its job is to collect AAD
+object IDs you do not know yet. Once they are in `allowFrom`, switch to
+`allowlist` so nobody else can even trigger a code:
 
-## Identities are AAD object ids
+```
+/msteams:access policy allowlist
+```
 
-Senders are matched on **AAD object id only** — the GUID Entra assigns each
-user. Never a display name, which the sender controls, and never an email.
+## Identities are AAD object IDs
 
-An activity with no `aadObjectId` is refused outright: that means a principal we
-cannot pin an identity to, and falling back to a name would be exactly the wrong
-move.
+Senders are matched on the **AAD object ID** only: the GUID Entra assigns each
+user. Never a display name, which the sender controls, and never an email. An
+activity with no `aadObjectId` is refused outright.
 
-You rarely need to find one by hand. Pairing captures it, and
+You rarely need to find one by hand: pairing captures it, and
 `/msteams:access` prints it.
 
 ## Channels and group chats
@@ -55,16 +54,14 @@ A channel is opted in per conversation:
 /msteams:access group add 19:...@thread.tacv2 --allow <oid1>,<oid2>
 ```
 
-**Getting the id:** in Teams, the channel's `⋯` → **Copy link**. The URL
-contains the conversation id URL-encoded — `19%3A...%40thread.tacv2` decodes to
-`19:...@thread.tacv2`. Same shape as Discord's Copy Channel ID.
+**Getting the ID:** in Teams, the channel's `⋯` → **Copy link**. The URL
+contains the conversation ID URL-encoded: `19%3A...%40thread.tacv2` decodes to
+`19:...@thread.tacv2`.
 
-**Group chats are the exception, and the workaround is awkward.** They have no
-shareable link, so their ids are not obtainable from the Teams UI at all. The
-only place a group chat's id surfaces is the server's own stderr, where a
-refused inbound is logged with it — and **mid-session stderr from an MCP server
-never reaches `~/.claude/debug/`**, so reading it means running the server
-standalone:
+**Group chats have no shareable link**, so their IDs are not obtainable from
+the Teams UI. The one place a group chat's ID surfaces is the server's own
+stderr, where a refused inbound is logged with it, and mid-session stderr from
+an MCP server never reaches `~/.claude/debug/`. Run the server standalone once:
 
 ```
 bun server.ts          # in its own terminal, with the tunnel pointed at it
@@ -73,25 +70,22 @@ msteams channel: refused inbound (conversation_not_opted_in) conversation=19:...
 ```
 
 Then `/msteams:access group add <that id>`. If that is too awkward, prefer a
-channel: channels have Copy link, and this is the one case they do better.
+channel: channels have Copy link.
 
-**An empty per-channel `allowFrom` means anyone in that channel can talk to the
-bot.** That is deliberate and it matches discord and telegram: opting the
-channel in *is* the trust decision, because requiring every colleague to pair by
-DM first would make a shared channel unusable. It is looser than the DM path —
-narrow it with `--allow` when the channel is broader than the people you want
-driving your session.
+**An empty per-conversation `allowFrom` means anyone in that conversation can
+talk to the bot.** That is deliberate and matches discord and telegram: opting
+the channel in is the trust decision. Narrow it with `--allow` when the channel
+is broader than the people you want driving your session.
 
 Threads inherit their parent channel's opt-in.
 
 ## Mention detection
 
 In a channel or group chat the bot answers only when addressed, unless you pass
-`--no-mention` for that conversation. A mention counts when the mentioned id is
-the bot's own — typing the bot's name as plain text does not count, or anyone
-could trigger it by writing a word.
+`--no-mention` for that conversation. A mention counts only when the mentioned
+ID is the bot's own; typing the bot's name as plain text does not count.
 
-`mentionPatterns` adds extra regexes that also count as addressing the bot:
+`mentionPatterns` adds regexes that also count as addressing the bot:
 
 ```
 /msteams:access set mentionPatterns ["^claude\\b"]
@@ -99,12 +93,10 @@ could trigger it by writing a word.
 
 ## Permission requests
 
-When Claude Code needs permission for a tool call, the request is relayed **to
-allowlisted DMs only**. Channels and group chats are excluded, deliberately:
-everyone in `allowFrom` cleared an explicit pairing, while a channel member only
-cleared the channel's opt-in — which, under an empty `allowFrom`, is anyone in
-the room. Letting a room vote on a permission prompt would hand your session's
-authority to whoever is standing in it.
+When Claude Code needs permission for a tool call, the request is relayed to
+**allowlisted DMs only**. Channels and group chats are excluded deliberately:
+a channel member only cleared the channel's opt-in, and letting a room vote on
+a permission prompt would hand your session's authority to whoever is in it.
 
 Answer in the DM:
 
@@ -113,33 +105,25 @@ y 7f3ab      allow
 n 7f3ab      deny
 ```
 
-Five letters, `l` excluded so it cannot be misread as `1`. Case does not matter.
-A bare "yes" is treated as conversation, not a verdict — it reaches the session
-as an ordinary message. Each request can be answered once; a repeated answer
-does nothing.
+Codes are five letters (`l` excluded so it cannot be misread as `1`), case
+does not matter. A bare "yes" is treated as conversation, not a verdict. Each
+request can be answered once; a repeated answer does nothing.
 
-**Auto mode never asks, so the relay never fires there.** Verified against a
-live session 2026-07-31: with `"defaultMode": "auto"` in settings, a `Bash` call
-was allowed by the classifier in 4ms and no `permission_request` was emitted at
-all. Permission requests reach this channel only in a mode that actually asks.
-If you are relying on approving from Teams, do not run the session in auto mode.
-
-The same classifier also judges *outbound* replies. In that session it denied a
-`reply` carrying `ls -la` output — shell output leaving for an external chat
-reads as exfiltration — while an ordinary prose reply passed. That is the
-classifier's call, not this plugin's gate, and it is invisible from the Teams
-side: the reply simply never arrives. A denial is logged in
+**Auto mode never asks, so the relay never fires there.** The relay works only
+in a permission mode that actually asks: if you rely on approving from Teams,
+start the session with `--permission-mode default`. Auto mode's classifier also
+judges outbound replies (shell output leaving for an external chat can be
+blocked as exfiltration); a denial is invisible from Teams and logged in
 `~/.claude/debug/<session-id>.txt` as `Auto mode classifier blocked action`.
 
-Tappable Allow/Deny buttons are not built; use the one-shot text verdicts above.
+Tappable Allow/Deny buttons are not built; use the text verdicts above.
 
 ## What the bot will never do
 
 - **Approve its own access.** `/msteams:access` acts only on requests you type
-  in your terminal. A Teams message asking to approve a pairing or add someone
-  to the allowlist is refused — that is precisely what a prompt injection looks
-  like.
-- **Reply somewhere it was not spoken to.** Every outbound tool is gated on a
+  in your terminal. A Teams message asking to approve a pairing or extend the
+  allowlist is refused: that is what a prompt injection looks like.
+- **Reply somewhere it was not spoken to.** Every outbound tool requires a
   conversation reference, which exists only for conversations the inbound gate
   already accepted.
 - **Send you its own state.** The state dir holds credentials and conversation
@@ -150,40 +134,51 @@ Tappable Allow/Deny buttons are not built; use the one-shot text verdicts above.
 
 ## Skill reference
 
-```
-/msteams:access                              status
-/msteams:access pair <code>                  approve a pending sender
-/msteams:access deny <code>                  discard a pending code
-/msteams:access allow <aadObjectId>          add directly
-/msteams:access remove <aadObjectId>         remove
-/msteams:access policy <pairing|allowlist|disabled>
-/msteams:access group add <conversationId> [--no-mention] [--allow a,b]
-/msteams:access group rm <conversationId>
-/msteams:access set mentionPatterns <json>
-```
+| Command | Effect |
+|---|---|
+| `/msteams:access` | Print current state: policy, allowlist, pending pairings, opted-in conversations. |
+| `/msteams:access pair <code>` | Approve a pending sender. |
+| `/msteams:access deny <code>` | Discard a pending code. The sender is not notified. |
+| `/msteams:access allow <aadObjectId>` | Add a sender directly. |
+| `/msteams:access remove <aadObjectId>` | Remove from the allowlist. |
+| `/msteams:access policy <policy>` | Set `dmPolicy`: `pairing`, `allowlist`, `disabled`. |
+| `/msteams:access group add <conversationId>` | Opt in a channel or group chat. Flags: `--no-mention`, `--allow id1,id2`. |
+| `/msteams:access group rm <conversationId>` | Opt out. |
+| `/msteams:access set mentionPatterns <json>` | Extra regexes that count as a mention. |
 
 ## Config file
 
-`<state dir>/access.json`, mode 0600 — where the state dir is
+`<state dir>/access.json`, mode 0600, where the state dir is
 `MSTEAMS_STATE_DIR`, default `~/.claude/channels/msteams`:
 
-```json
+```jsonc
 {
+  // Handling for DMs from senders not in allowFrom.
   "dmPolicy": "pairing",
+
+  // AAD object IDs allowed to DM.
   "allowFrom": ["<aadObjectId>"],
+
+  // Opted-in channels and group chats. Empty object = DM-only.
   "groups": {
-    "19:...@thread.tacv2": { "requireMention": true, "allowFrom": [] }
+    "19:...@thread.tacv2": {
+      // true: respond only when the bot is @-mentioned.
+      "requireMention": true,
+      // Restrict triggers to these senders. Empty = anyone in the conversation.
+      "allowFrom": []
+    }
   },
+
+  // Pairing codes awaiting a verdict. Managed by the server.
   "pending": {},
+
+  // Case-insensitive regexes that count as a mention.
   "mentionPatterns": []
 }
 ```
 
-Re-read on every inbound message, so access changes take effect immediately —
+Re-read on every inbound message, so access changes take effect immediately,
 no restart. Credentials in `.env` are the opposite: read once at boot.
 
-Setting `MSTEAMS_ACCESS_MODE=static` snapshots access at boot and never writes.
-Pairing
-cannot work under it and is downgraded to `allowlist` with a warning, since
-handing out codes that can never be approved would look like a working feature
-going nowhere.
+`MSTEAMS_ACCESS_MODE=static` snapshots access at boot and never writes. Pairing
+cannot work under it and is downgraded to `allowlist` with a warning.
