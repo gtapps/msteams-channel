@@ -16,7 +16,7 @@ bun send.ts --list                # proactive-send CLI: list reachable conversat
 ```
 
 Running the plugin for real needs two things beyond installing it — a managed-settings
-allowlist entry and `claude --channels plugin:msteams@claude-code-msteams-channel`. See
+allowlist entry and `claude --channels plugin:msteams@msteams-channel`. See
 README.md "Two-step enablement"; without both, inbound events are dropped **silently**.
 
 ## Architecture

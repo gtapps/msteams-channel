@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "claude-channel-msteams",
+      "name": "msteams-channel",
       "dependencies": {
         "@microsoft/teams.api": "2.0.14",
         "@microsoft/teams.apps": "2.0.14",

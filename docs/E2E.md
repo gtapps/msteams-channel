@@ -36,7 +36,7 @@ Record the build under test: `git rev-parse --short HEAD`.
 Launch the session for legs 1–6 with:
 
 ```bash
-claude --channels plugin:msteams@claude-code-msteams-channel
+claude --channels plugin:msteams@msteams-channel
 ```
 
 **If nothing arrives at all, stop and read
@@ -123,7 +123,7 @@ echo 'from stdin' | bun send.ts --conversation <id>
 auto`, which is the fleet default:
 
 ```bash
-claude --permission-mode default --channels plugin:msteams@claude-code-msteams-channel
+claude --permission-mode default --channels plugin:msteams@msteams-channel
 ```
 
 Ask Claude to do something requiring approval (e.g. run a shell command).

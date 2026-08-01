@@ -1,5 +1,5 @@
 {
-  "name": "claude-channel-msteams",
+  "name": "msteams-channel",
   "version": "0.0.1",
   "license": "MIT",
   "type": "module",
