@@ -1,225 +1,305 @@
-# Microsoft Teams channel for Claude Code
+# Claude Code Microsoft Teams Channel Plugin
 
 [![CI](https://github.com/gtapps/msteams-channel/actions/workflows/ci.yml/badge.svg)](https://github.com/gtapps/msteams-channel/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/github/v/release/gtapps/msteams-channel?sort=semver)](https://github.com/gtapps/msteams-channel/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Chat with Claude Code from Microsoft Teams: direct messages and mention-gated
-channel posts arrive in your session, and Claude replies in the right thread.
-Built directly on the [Microsoft Agents SDK][sdk] (`@microsoft/teams.apps`) —
-no third-party agent framework, no hosted relay, no service you don't run.
+Connect Microsoft Teams to a local Claude Code session. Messages from direct
+chats and opted-in channels reach Claude, and replies return to the same
+conversation or channel thread.
 
-> **Status: MVP.** Inbound pipeline, outbound tools, access model and permission
-> relay are complete and were each verified against a real Teams tenant. Two
-> things are known not to work and are documented rather than hidden:
-> [reactions](docs/REACTIONS.md) (Graph exposes no application-only permission
-> for them — a permanent limitation, not a bug) and outbound file types other
-> than images under 4MB.
+This community plugin follows the same Claude Code channel protocol and core
+access patterns as Anthropic's official
+[Discord](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord)
+and [Telegram](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/telegram)
+plugins. Its pairing, allowlists, permission relay and tool conventions will be
+familiar; transport and threading are adapted for Teams using the
+[Microsoft Agents SDK][sdk].
 
-## How it runs
+There is no hosted relay or third-party bot service. You run the plugin and its
+HTTPS ingress, while the bot registration stays in your Microsoft tenant.
 
-One Bun process, spawned by Claude Code as a stdio MCP server. It also owns the
-Teams webhook listener, bound to localhost:
+## Features
 
-```
-Microsoft Teams ──HTTPS──> your ingress (prod: reverse proxy / dev: devtunnel)
-                                   │
-                            localhost:3978 /api/messages
-                                   │
-                       msteams MCP server (one Bun process)
-                                   │  stdio MCP
-                        Claude Code session
-```
+### Messaging
 
-Every request is validated as an Entra JWT by the Microsoft SDK before it
-reaches any of our code, so an anonymous dev tunnel is safe as a transport.
+- [x] Direct messages
+- [x] Opt-in Teams channels and group chats
+- [x] Mention-gated shared conversations
+- [x] Replies in the correct Teams channel thread
+- [x] Markdown and plain-text replies
+- [x] Automatic chunking of long responses
+- [x] Editing messages previously sent by the bot
+- [x] Proactive sends from `send.ts`
 
-## Prerequisites
+### Attachments
 
-Unlike the Telegram and Discord channels, **Teams has to reach you** — it pushes
-activities to a webhook rather than letting a bot poll. That is the one
-structural difference, and it sets the bar for what you need:
+- [x] Inbound images downloaded automatically
+- [x] Multiple inbound attachments in one message
+- [x] Other inbound files downloaded on demand with `download_attachment`
+- [x] Outbound PNG, JPEG, GIF, WebP and BMP images
 
-- **[Bun](https://bun.sh)** on `PATH` — the MCP server runs on it. `curl -fsSL https://bun.sh/install | bash`.
-- **A public HTTPS endpoint** that forwards to `127.0.0.1:3978` — a reverse proxy
-  (Caddy) where you have a public IP, Cloudflare Tunnel behind NAT, or Microsoft
-  `devtunnel` for development. The plugin binds localhost and you own the edge.
-- **A Microsoft 365 tenant where you are Global Administrator**, plus an **Azure
-  subscription with the Owner role** to hold the bot. The Azure Bot F0 tier is
-  free; a Business Basic seat is ~$7/user/mo. Full cost table and the traps —
-  including a trial that auto-converts to a twelve-month commitment — are in
-  [docs/SETUP.md](docs/SETUP.md#cost).
-- **Root on the machine running Claude Code**, once, to admit a third-party
-  channel to the allowlist (see below).
+Outbound images are limited to 10 per reply and must be under 4MB each.
 
-## Install
+### Access and reliability
 
-This repo *is* its own marketplace — the plugin lives at the repo root and
-`.claude-plugin/marketplace.json` points at it, so there is nothing else to
-clone or host:
+- [x] Pairing and Microsoft account ID (AAD object ID) allowlists
+- [x] Per-conversation channel and group-chat policies
+- [x] Messages restricted to your Microsoft 365 organization
+- [x] Immediate inbound and outbound revocation
+- [x] Permission requests relayed to allowlisted DMs
+- [x] Durable inbound queue, deduplication and restart replay
 
-```
-/plugin marketplace add gtapps/msteams-channel
-/plugin install msteams@msteams-channel
-```
+### Differences from Discord and Telegram
 
-A local checkout works the same way — `/plugin marketplace add <path-to-clone>`.
+Unchecked items are unavailable today; they are not necessarily roadmap
+commitments.
 
-The marketplace name `msteams-channel` is load-bearing, not cosmetic:
-it appears again in the allowlist entry and in the launch flag below, and all
-three must agree or the channel silently fails to register.
+- [ ] **Reactions** — require a signed-in Microsoft user; this bot runs
+      unattended without one. See
+      [docs/REACTIONS.md](docs/REACTIONS.md).
+- [ ] **Typing indicator** — supported by both official plugins.
+- [ ] **General outbound files** — Discord and Telegram support them; Teams
+      sends images only.
+- [ ] **Permission buttons** — Discord and Telegram provide Allow/Deny controls.
+      Teams accepts `y <code>` or `n <code>`.
+- [ ] **Recent message retrieval** — Discord can fetch recent history; Telegram
+      and Teams process messages only as they arrive.
 
-## Two-step enablement (read this before filing a bug)
+## Requirements
 
-Installing the plugin is **not** enough. Two more things are required, both
-verified against Claude Code v2.1.220.
+Teams pushes messages to a webhook, so it must reach the machine running Claude
+Code.
 
-**1. Admit the plugin to the channel allowlist** (root, once per machine).
-Claude Code's default allowlist is exactly the channel plugins in
-`anthropics/claude-plugins-official`, so a third-party channel needs an explicit
-entry:
+- **[Bun](https://bun.sh)** on `PATH`.
+- **A public HTTPS endpoint** forwarding to `127.0.0.1:3978`, such as a reverse
+  proxy, Cloudflare Tunnel or Microsoft `devtunnel`.
+- **A Microsoft 365 organization you administer** and an **Azure subscription
+  with the Owner role**. See [costs](SETUP.md#cost).
+- **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
+  recommended.** The tested setup is CLI-first, with a few Microsoft 365 and
+  Teams admin-center steps.
+- Permission to configure Claude Code managed settings, locally or centrally.
+
+## Quick setup
+
+### 1. Register the Teams bot
+
+Register the bot with Microsoft, create its credentials, and connect it to
+Teams by following [provisioning steps 0–5](SETUP.md#step-0--enable-custom-app-upload-first).
+They use Azure CLI where possible and `az rest` for one operation that
+`az bot msteams create` currently cannot complete.
+
+Credentials stay in `<state dir>/.env` with mode `0600`, never in command
+arguments or logs. State lives in `~/.claude/channels/msteams/` — user scope,
+beside the discord and telegram channels — and `MSTEAMS_STATE_DIR` moves it. The
+runtime, the proactive-send CLI and both operator skills resolve the same rule,
+so they always agree. See [state directory](#state-directory).
+
+Want Claude to guide the process? Copy the prompt under
+[Agent-assisted setup](SETUP.md#agent-assisted-setup).
+
+### 2. Install the plugin
+
+Run these commands where Claude Code runs:
 
 ```bash
-sudo mkdir -p /etc/claude-code
-sudo tee /etc/claude-code/managed-settings.json >/dev/null <<'EOF'
-{"channelsEnabled":true,"allowedChannelPlugins":[
-  {"marketplace":"msteams-channel","plugin":"msteams"}]}
-EOF
+claude plugin marketplace add gtapps/msteams-channel
+claude plugin install msteams@msteams-channel --scope local
 ```
 
-This list **replaces** the default allowlist rather than extending it, so any
-other channel you use must be listed alongside it.
+A local checkout works too: replace `gtapps/msteams-channel` in the first
+command with `/path/to/msteams-channel`.
 
-**2. Launch with the channel flag:**
+Use local scope: every loaded instance starts a webhook listener, so a
+user-scoped install can create port conflicts.
+
+### 3. Allow the community channel
+
+Installing is not enough. `/etc/claude-code/managed-settings.json` has to both
+enable channels and list this plugin — or ask your Claude Code administrator to
+set the same values centrally:
+
+```json
+{
+  "channelsEnabled": true,
+  "allowedChannelPlugins": [{ "marketplace": "msteams-channel", "plugin": "msteams" }]
+}
+```
+
+`allowedChannelPlugins` **replaces** the defaults, so preserve every existing
+channel entry. `channelsEnabled` is required as soon as the file exists at all:
+creating it with the allowlist alone leaves channels off and inbound messages
+silently dropped. See the
+[full enablement walkthrough](SETUP.md#step-6--enabling-the-channel).
+
+### 4. Launch and pair
 
 ```bash
 claude --channels plugin:msteams@msteams-channel
 ```
 
-That is the entire command — no `--plugin-dir`, no `--mcp-config`, and no
-`--dangerously-load-development-channels`. `--channels` does not appear in
-`claude --help`.
+Run `/msteams:configure` to check status. Then DM the bot, approve its pairing
+code in Claude Code, and lock it down:
 
-Two things worth knowing before you debug anything:
+```text
+/msteams:access pair <code>
+/msteams:access policy allowlist
+```
 
-- **Inbound events are dropped silently** when the channel is not registered: no
-  reply, no error, nothing in this plugin's log, because the message never
-  reaches it. That is the protocol's normal failure mode, not a bug here.
-- **The `Channels (experimental)` startup banner is cosmetic** — it prints
-  whether or not registration succeeded. The only evidence is the
-  `Channel notifications skipped:` line in `~/.claude/debug/<session-id>.txt`,
-  which names the exact cause.
+## Operator commands
 
-**`--dangerously-load-development-channels` does not work on v2.1.220.** The
-published docs present it as the way to test an unpublished channel, but it never
-registers the entry and its documented confirmation dialog never appears —
-confirmed against Anthropic's own `fakechat` server under a non-allowlisted name,
-which fails the same way. Use the managed-settings route above.
+```text
+/msteams:configure                         Show configuration status
+/msteams:access                            Show the current access policy
+/msteams:access pair <code>                Approve a pending DM sender
+/msteams:access deny <code>                Reject a pending pairing
+/msteams:access allow <aad-object-id>       Allow a sender directly
+/msteams:access remove <aad-object-id>      Revoke a sender
+/msteams:access policy allowlist            Stop issuing new pairing codes
+/msteams:access group add <conversation>    Enable a channel or group chat
+/msteams:access group rm <conversation>     Disable a channel or group chat
+```
 
-Full walkthrough and a failure-mode table: [`docs/SETUP.md`](docs/SETUP.md#step-6--enabling-the-channel).
-Symptom-first index: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+See [ACCESS.md](ACCESS.md) for mention settings, per-conversation sender lists
+and the full command reference.
 
-## Setup
+Proactive sending does not require a running Claude Code session:
 
-Per install you provide your own single-tenant Entra app registration and Azure
-Bot resource, in your own tenant. The Azure Bot **F0 tier is free** and
-Microsoft Teams counts as a "standard channel", so Teams messaging costs
-nothing; you still need an Azure subscription to hold the resource.
+```bash
+bun send.ts --list
+bun send.ts --conversation <id> --text "Deployment complete"
+```
 
-**[docs/SETUP.md](docs/SETUP.md) is the runbook** — every command in it was
-executed against a real tenant, and it records the several places where the
-vendor tooling does not behave as documented (a broken `az bot msteams` command,
-a tunnel hostname that ignores the alias you pin, a resource provider that is
-unregistered by default). Read it before provisioning.
+## Tools exposed to Claude
 
-`/msteams:configure` will eventually walk this interactively; `/msteams:access`
-manages pairing and allowlists.
+| Tool                  | Purpose                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `reply`               | Reply to a DM, channel, group chat or channel thread. Supports text chunking and outbound images. |
+| `edit_message`        | Replace the text of a message previously sent by the bot.                                         |
+| `download_attachment` | Download a non-image inbound attachment into the local inbox.                                     |
+| `react`               | Currently returns an explanatory error because Teams reactions require delegated authentication.  |
 
-Credentials live only in `~/.claude/channels/msteams/.env` (mode 0600), never
-in argv or logs. Override the state dir with `MSTEAMS_STATE_DIR`.
+## How it works
 
-Listener settings, all optional:
+Claude Code starts one Bun process for MCP over stdio and the Teams webhook:
 
-| Variable | Default | Notes |
-|---|---|---|
-| `MSTEAMS_WEBHOOK_PORT` | `3978` | One port per bot; several can share a host behind one proxy. |
-| `MSTEAMS_WEBHOOK_PATH` | `/api/messages` | Must match the bot's messaging endpoint. |
-| `MSTEAMS_WEBHOOK_HOST` | `127.0.0.1` | **Set to `0.0.0.0` in Docker** — loopback inside a container is the container's own, so a host-side proxy can't reach it. Publish the port too. |
+```text
+Microsoft Teams ──HTTPS──> your ingress
+                                │
+                     127.0.0.1:3978/api/messages
+                                │
+                      msteams MCP server
+                                │ stdio
+                         Claude Code session
+```
 
-## Security model
+The Microsoft SDK authenticates requests before they reach the plugin. You own
+the HTTPS edge; the plugin binds to localhost by default.
 
-- **Transport auth**: Entra JWT validation by the Microsoft SDK — never
-  hand-rolled.
-- **Identity**: senders are matched on AAD object id. Display names never grant
-  access.
-- **Tenant boundary**: single-tenant registration plus an explicit tenant check
-  on every activity.
-- **Outbound gate**: replies, edits and proactive sends can only target
-  conversations that were accepted inbound *and* are still allowed by the
-  current access policy — a message cannot talk the bot into exfiltrating
-  somewhere new, and revoking access revokes it in both directions.
-- **Permission relay** reaches allowlisted DMs only; group chats are excluded.
-  Answer with `y <code>` or `n <code>`; a code is one-shot.
+Optional listener settings:
 
-  **The relay is dormant under `--permission-mode auto`.** Auto mode's
-  classifier decides tool calls itself and emits no permission request at all,
-  so nothing is ever relayed to Teams. This is expected, not a misconfiguration
-  — the relay only does anything in a session started with
-  `--permission-mode default`.
+| Variable               | Default         | Notes                                         |
+| ---------------------- | --------------- | --------------------------------------------- |
+| `MSTEAMS_WEBHOOK_PORT` | `3978`          | One port per bot.                             |
+| `MSTEAMS_WEBHOOK_PATH` | `/api/messages` | Must match the bot's messaging endpoint.      |
+| `MSTEAMS_WEBHOOK_HOST` | `127.0.0.1`     | Use `0.0.0.0` in Docker and publish the port. |
+
+### State directory
+
+State is user scope by default — `~/.claude/channels/msteams/`, beside the
+discord and telegram channels — holding `.env`, `access.json`, conversation
+references and the queue. Dirs are `0700`, files `0600`.
+
+`MSTEAMS_STATE_DIR` moves it. Export it in the shell that launches `claude`, so
+both the listener and the operator skills see it:
+
+```bash
+export MSTEAMS_STATE_DIR="$PWD/.claude/channels/msteams"
+claude --channels plugin:msteams@msteams-channel
+```
+
+Declaring it in `.claude/settings.local.json` under `env` reaches the listener,
+but does not reliably reach the skills — and when only one side moves,
+`/msteams:access` edits a file the listener never reads. The skills detect that
+split and refuse to write rather than report a revocation that did not happen.
+`/msteams:configure` prints the directory it resolved; the listener's own answer
+is the `ready (state dir …)` line in `~/.claude/debug/<session-id>.txt`.
+
+A project-local state dir holds live credentials, so add it to that repo's
+`.gitignore` yourself — nothing is written for you.
+
+### One listener per bot
+
+An Azure Bot registration has one messaging endpoint URL, so Teams traffic
+reaches exactly one listener, on one host, on one port. No state layout changes
+that.
+
+Two projects sharing the default state dir see each other's `bot.pid`, and the
+newer listener evicts the older one — the port changes hands, but the evicted
+session goes quiet without saying so. Give them separate state dirs and they
+collide on the port instead: the second logs `FAILED to bind …` and exits, which
+is the same outcome stated out loud. Restarting within one project still
+replaces its own stale listener either way.
+
+Running two projects on Teams for real needs two Entra apps, two bot
+registrations, two Teams app manifests, two tunnel hostnames and a distinct
+`MSTEAMS_WEBHOOK_PORT` each. Sending is unaffected — `send.ts` needs no port.
+
+## Security
+
+- The Microsoft SDK authenticates requests and the plugin enforces the tenant.
+- Microsoft account IDs grant access; display names never do.
+- Every outbound send requires a previously accepted conversation that is still
+  allowed, so revocation stops both directions immediately.
+- Permission requests go only to allowlisted DMs and use one-shot verdicts.
+
+Permission relay requires `--permission-mode default`; auto mode does not
+produce permission requests.
 
 ## Troubleshooting
 
-Silence is this channel's normal failure mode — a message that is refused, or
-never registered, produces no reply and no error anywhere the sender can see.
-[**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) is the symptom-first index: start
-with the `Channel notifications` line in `~/.claude/debug/<session-id>.txt`,
-which names the exact cause when nothing arrives at all.
+An unregistered or refused message fails silently in Teams. Start with the
+`Channel notifications skipped:` line in
+`~/.claude/debug/<session-id>.txt`, then use
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+The tested Claude Code version did not register this community channel through
+`--dangerously-load-development-channels`; use managed settings and the
+`--channels` launch flag described above.
 
 ## Development
 
 ```bash
-bun test          # 249 tests, ~11s, no tenant or network required
-bun run typecheck # must pass before committing
-bun run dev       # run the MCP server standalone; stderr is the only log
-bun send.ts --list  # proactive-send CLI: what is reachable right now
+bun test
+bun run typecheck
+bun run dev
+bun send.ts --list
 ```
 
-Use `bun run dev`, not `bun run start` — `start` is what Claude Code spawns and
-installs production dependencies only, which prunes the devDependencies your
-tests need. Full guide: [CONTRIBUTING.md](CONTRIBUTING.md).
-
-CI runs exactly `bun run typecheck` and `bun test` — deliberately tenant-free,
-so a fork can run it and no secret is ever exposed to one. Live verification is
-the smoke test in [`docs/E2E.md`](docs/E2E.md), which an operator runs by hand.
-
-One caveat when debugging a running session: **an MCP server's stderr reaches
-`~/.claude/debug/<session-id>.txt` only at startup.** Mid-session writes go
-nowhere, so server-side logging is a dev aid when running standalone, never
-something to ask an operator to read live.
+CI needs no tenant or network. Live tenant verification is maintainer-run; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the public development workflow.
 
 ## Uninstall
 
-```
-/plugin uninstall msteams@msteams-channel
-/plugin marketplace remove msteams-channel
+```bash
+claude plugin uninstall msteams@msteams-channel --scope local
+claude plugin marketplace remove msteams-channel
 ```
 
-Then remove the managed-settings entry from `/etc/claude-code/managed-settings.json`
-(leaving any other channel you use in the list), and delete
-`~/.claude/channels/msteams/` — it holds your credentials, access policy and
-queued activities. Tearing down the Azure side is
-[docs/SETUP.md § Teardown](docs/SETUP.md#teardown); cancel the M365 subscription
-separately, in the admin center, before a trial converts.
+Remove only the `msteams` managed-settings entry. Delete your state dir
+(`MSTEAMS_STATE_DIR`, default `~/.claude/channels/msteams/`), then follow the
+[Azure teardown](SETUP.md#teardown). Cancel paid Microsoft 365 licensing
+separately.
 
 ## Support
 
-Bugs and questions: [open an issue](https://github.com/gtapps/msteams-channel/issues).
-Include the `Channel notifications` log line (or its absence) and your Claude
-Code version, and **redact tenant ids, AAD object ids, conversation ids and any
-`tempauth=` URL** — those are credentials.
+Bugs and questions: [open an issue](https://github.com/gtapps/msteams-channel/issues)
+with your Claude Code version and `Channel notifications` log line. Redact
+tenant, account and conversation ids and any `tempauth=` URL.
 
-Suspected security issue: [SECURITY.md](SECURITY.md) — report it privately, not
-as an issue. Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
+Report suspected security issues through [SECURITY.md](SECURITY.md), not a
+public issue. Contributions are covered in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

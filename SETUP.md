@@ -1,14 +1,37 @@
 # Setting up the msteams channel
 
-Everything here was executed end to end against a real tenant on 2026-07-31 and
-reflects what actually happened, not what the vendor docs describe. Where the
-two disagree, the observed behavior is recorded and the discrepancy called out.
+This guide registers a bot with Microsoft, creates its credentials, connects it
+to Teams and enables the plugin in Claude Code. The process is CLI-first, with a
+few browser steps in the Microsoft 365 and Teams admin centers.
 
-You provision your own Entra app and Azure Bot, in your own tenant. Nothing in
-this plugin phones home and there is no shared endpoint — one client org is one
-deployment.
+Everything here was tested end to end against a real Microsoft 365 organization
+on 2026-07-31. Nothing phones home: you own the bot, credentials and HTTPS
+endpoint.
+
+## Agent-assisted setup
+
+From this repository checkout, give Claude Code the following prompt:
+
+```text
+Help me set up msteams-channel by following SETUP.md in order.
+
+Start with read-only checks. Verify Azure CLI, my active Microsoft organization,
+Azure subscription and required roles. Explain the resources and costs before
+creating anything.
+
+Use Azure CLI where supported. Hand browser-only Microsoft 365 and Teams admin
+steps back to me with exact instructions. Never print a secret or put one in
+argv or logs; write credentials directly to
+${MSTEAMS_STATE_DIR:-$HOME/.claude/channels/msteams}/.env with mode 0600.
+
+Preserve existing allowedChannelPlugins entries instead of replacing them.
+Verify each stage before continuing: local webhook, public ingress, bot,
+plugin registration, pairing and allowlist mode. Do not run teardown.
+```
 
 ## Cost
+
+Prices below were verified on 2026-07-31 and may change.
 
 | Item | Cost |
 |---|---|
@@ -54,10 +77,10 @@ ignored. If the toggle is unavailable, a global admin always has the
 non-disableable **Manage apps → Upload new app** path — sideloading is gated,
 not walled.
 
-## Step 1 — Find your tenant ID without logging in
+## Step 1 — Find your organization ID
 
-Your tenant ID is a GUID. It is **not** your username and not your phone number.
-You can read it straight off Microsoft's public discovery endpoint:
+Microsoft calls this the tenant ID. It is a GUID, not your username or phone
+number. Read it from Microsoft's public discovery endpoint:
 
 ```bash
 curl -s "https://login.microsoftonline.com/<your-domain>.onmicrosoft.com/v2.0/.well-known/openid-configuration" \
@@ -130,11 +153,11 @@ stable across restarts** as long as the tunnel object itself is not deleted. So
 pinning does buy you a durable endpoint, just not a predictable one. Tunnels
 expire after a maximum of 30 days.
 
-## Step 4 — Entra app, credential, bot
+## Step 4 — Register the bot identity
 
-Single-tenant registration. `--sign-in-audience AzureADMyOrg` is what pins the
-app to your tenant, and it is what the plugin's gate enforces on every inbound
-activity.
+Microsoft calls the bot identity an app registration. The
+`--sign-in-audience AzureADMyOrg` option restricts it to your organization, and
+the plugin checks that boundary on every incoming message.
 
 ```bash
 APPID=$(az ad app create \
@@ -166,7 +189,7 @@ Generate the client credential straight into the state dir. **Never pass it in
 argv and never echo it** — argv is world-readable in `/proc` on Linux:
 
 ```bash
-STATE="$HOME/.claude/channels/msteams"
+STATE="${MSTEAMS_STATE_DIR:-$HOME/.claude/channels/msteams}"
 mkdir -p "$STATE" && chmod 700 "$STATE"
 umask 077
 PW=$(az ad app credential reset --id "$APPID" --append --years 1 \
@@ -246,9 +269,12 @@ behavior is what is recorded.
 ### 6a — Install at local scope
 
 ```bash
-claude plugin marketplace add /path/to/msteams-channel
+claude plugin marketplace add gtapps/msteams-channel
 claude plugin install msteams@msteams-channel --scope local
 ```
+
+For a local checkout, replace `gtapps/msteams-channel` in the first command with
+`/path/to/msteams-channel`.
 
 **Local scope, not user scope.** A channel plugin's MCP server is spawned by
 every session that loads it. At user scope every Claude Code session on the
@@ -258,25 +284,30 @@ your session, and inbound events land nowhere visible.
 
 ### 6b — Admit the plugin to the channel allowlist
 
-Claude Code's default allowlist is exactly the channel plugins in
-`anthropics/claude-plugins-official`, and that repo auto-closes third-party pull
-requests. A third-party channel is admitted through managed settings, which
-requires root:
+Claude Code's default allowlist contains the official channel plugins. Two keys
+in `/etc/claude-code/managed-settings.json` are involved — add this entry to the
+existing `allowedChannelPlugins` array, and make sure `channelsEnabled` is on:
 
-```bash
-sudo mkdir -p /etc/claude-code
-sudo tee /etc/claude-code/managed-settings.json >/dev/null <<'EOF'
-{"channelsEnabled":true,"allowedChannelPlugins":[
-  {"marketplace":"msteams-channel","plugin":"msteams"}]}
-EOF
+```json
+{
+  "channelsEnabled": true,
+  "allowedChannelPlugins": [{"marketplace":"msteams-channel","plugin":"msteams"}]
+}
 ```
 
-> **This list replaces the default allowlist — it does not extend it.** Any other
-> channel you rely on (`discord`, `voice`, …) must be listed here too, or it
-> silently stops receiving messages. Add entries, never swap them.
+Root can edit the local file. On Team and Enterprise plans, an administrator can
+set the same values centrally.
 
-On Team and Enterprise plans this is the same `allowedChannelPlugins` an admin
-sets centrally.
+> **The array replaces the default allowlist — it does not extend it.** Preserve
+> every existing channel entry. Replacing the file with a one-plugin example can
+> silently disable Discord, Telegram, voice or another channel already in use.
+
+> **`channelsEnabled: true` is not optional once the file exists.** With no
+> managed-settings file at all, channels are on by default on Console plans; the
+> moment the file exists and omits the key, every channel is blocked — so
+> creating it for the allowlist alone is worse than not creating it. On Team and
+> Enterprise plans the key is required *unconditionally*, file or no file. The
+> debug log says `channels not enabled by org policy` either way.
 
 ### 6c — Launch
 
@@ -296,128 +327,19 @@ was confirmed against Anthropic's own `fakechat` server copied into a private
 marketplace under a different name, which fails identically — so it is not a
 defect in this plugin. Use the managed-settings route above.
 
-### 6d — If messages still vanish
+## If setup fails
 
-Inbound events are dropped **silently** — no reply, no error, nothing in this
-plugin's log, because the message never reaches it. There is exactly one place
-that tells you why:
+Messages that never register or fail the access policy are silent in Teams.
+Start with:
 
 ```bash
 grep "Channel notifications" ~/.claude/debug/<session-id>.txt
 ```
 
-Run `claude --debug` to get that path. The line names the precise cause:
-
-| Log line | Cause |
-|---|---|
-| `not in --channels list for this session` | The entry never resolved to an installed plugin — usually a shadowed server, see below. |
-| `not on the approved channels allowlist` | Step 6b missing or the plugin is absent from `allowedChannelPlugins`. |
-| `you asked for plugin:msteams@X but the installed msteams plugin is from Y` | Wrong marketplace name in `--channels`. Use the name from `claude plugin marketplace list`. |
-| `server did not declare claude/channel capability` | Not this plugin — that line appears for every ordinary MCP server. |
-
-**The most expensive trap: a stale `--mcp-config` or project `.mcp.json` that
-also defines an `msteams` server.** Claude Code silently prefers it and suppresses
-the plugin's own server:
-
-```
-Suppressing plugin MCP server "plugin:msteams:msteams": duplicates manually-configured "msteams"
-```
-
-The listener then runs happily under the id `server:msteams` — accepting real
-Teams traffic, writing to the queue — while `--channels plugin:msteams@…` refers
-to a server that no longer exists. Everything looks healthy and nothing is
-delivered. Delete the stray config and relaunch.
-
-`--plugin-dir` causes the same class of failure for a different reason: it yields
-the id `plugin:msteams:msteams` with no marketplace component, which
-`plugin:msteams@msteams-channel` can never match. Install properly
-(6a) instead.
-
-**Do not trust the startup banner.** The dim
-`Channels (experimental) messages from plugin:msteams@… inject directly in this
-session` notice prints whether or not registration actually succeeded. Only the
-debug log is evidence.
-
-### 6e — If DMs work but channel messages are ignored
-
-Channels are opt-in, and a channel that is not opted in is refused **silently**
-— telling the sender why would confirm the bot exists and leak policy. So the
-symptom is: DMs work perfectly, @-mentions in a channel do nothing at all.
-
-Two conditions, both in `~/.claude/channels/msteams/access.json`:
-
-```json
-{
-  "groups": {
-    "19:<channel-thread-id>@thread.tacv2": {
-      "requireMention": true,
-      "allowFrom": []
-    }
-  }
-}
-```
-
-**Prefer the skill over hand-editing:** `/msteams:access group add
-19:…@thread.tacv2` writes exactly this, and `/msteams:access` with no arguments
-shows what is currently opted in. Full reference: [`ACCESS.md`](../ACCESS.md).
-
-The file is re-read on every inbound message, so edits take effect immediately —
-no restart.
-
-**Teams hands you the channel id.** In Teams, open the channel's **⋯ → Copy
-link**. The URL contains the conversation id, URL-encoded:
-
-```
-https://teams.microsoft.com/l/channel/19%3AaEHRk…%40thread.tacv2/General?groupId=…
-                                      └──── the conversation id ────┘
-```
-
-Decode it — `%3A` is `:` and `%40` is `@` — giving
-`19:aEHRk…@thread.tacv2`. That is exactly the key under `groups`. This is the
-same approach the Discord plugin takes (Developer Mode → Copy Channel ID); the
-id comes from the client, not from the bot.
-
-Strip anything from `;messageid=` onwards if present — the key is the bare
-conversation id, so every thread in the channel inherits the opt-in.
-
-`allowFrom` inside a group entry narrows *who* in that channel may drive the
-bot, by AAD object id. **Left empty, anyone in the channel can** — opting the
-channel in is itself the trust decision, matching the discord and telegram
-plugins.
-
-Group chats are the gap: unlike channels they have no shareable link, so there
-is no way to read their id from the UI. Opt-in for those is on the DM/channel
-path only for now.
-
-`requireMention: true` (the default) additionally means a channel post must
-@-mention the bot. A post that merely contains its name does not count; Teams
-sends a real mention entity and the gate checks for that.
-
-### 6f — If messages arrive but replies fail
-
-The opposite symptom to 6d, and a much easier one: inbound works, Claude sees the
-message, and only the send fails. The tool reports the underlying error verbatim,
-so read it rather than guessing.
-
-| Error | Cause |
-|---|---|
-| `AADSTS7000229: … missing service principal in the tenant …` | The service principal was never created. Run `az ad sp create --id <app-id>` (step 4). This is the common one for a manual registration. |
-| `AADSTS7000215: Invalid client secret` | The credential in `.env` is wrong or expired. Reset it per step 4 — and check nothing quoted it. |
-| `AADSTS700016: Application not found in the directory` | `MSTEAMS_APP_ID` does not match the registration, or you are pointed at the wrong tenant. |
-| `412` from `react` | Expected — reactions do not work with this plugin's authentication, and no setting fixes it. See below. |
-| `refused: no inbound conversation on record` | Working as designed. The bot may only reply where it was spoken to; message it from Teams first. |
-
-**Reactions do not work, and there is nothing to configure.** Graph's
-`setReaction` accepts no application permission of any kind — resource-specific
-consent included — and this plugin authenticates as the application so it can
-run unattended. Graph reports that refusal as 412. Do not grant Entra
-permissions or edit the Teams manifest hoping to fix it; neither can.
-
-Full evidence, the two hypotheses that were ruled out, and what delegated auth
-would take: [`REACTIONS.md`](REACTIONS.md).
-
-Everything else in this channel works without reactions, and the tool degrades
-with a clear message rather than failing obscurely.
+Then follow [TROUBLESHOOTING.md](TROUBLESHOOTING.md), which covers channel
+registration, duplicate MCP configuration, channel opt-in, credentials,
+reaction errors and outbound refusals. Access commands and channel IDs are in
+[ACCESS.md](ACCESS.md).
 
 ## Production ingress
 
@@ -438,6 +360,23 @@ container's own loopback**, so a host-side reverse proxy cannot reach it. Set
 To run several bots on one host, give each its own `MSTEAMS_WEBHOOK_PORT` and
 point one subdomain at each behind a single proxy.
 
+### Running more than one project
+
+A bot registration has one messaging endpoint URL, so Teams traffic reaches one
+listener, on one host, on one port. Each extra project needs its own Entra app,
+bot registration, Teams app manifest, tunnel hostname and `MSTEAMS_WEBHOOK_PORT`
+— plus its own `MSTEAMS_STATE_DIR`, since `bot.pid` and the conversation
+references live there.
+
+Skip any of that and the two projects contend. Sharing a state dir, the newer
+listener finds the older one's `bot.pid` and evicts it: the port transfers, but
+the evicted session goes quiet without a word in its own log. With separate state
+dirs neither sees the other's pidfile, so the second fails to bind and exits with
+`FAILED to bind 127.0.0.1:3978` — the same loss, said out loud at startup, where
+`~/.claude/debug/<session-id>.txt` records it.
+
+Sending is unaffected either way: `send.ts` needs no port.
+
 ## Teardown
 
 The whole experiment unwinds cleanly because everything lives in one group:
@@ -448,5 +387,6 @@ az ad app delete --id "$APPID"
 devtunnel delete msteams-dev
 ```
 
-Then remove `~/.claude/channels/msteams/`. Cancel the M365 subscription
+Then remove your state dir (`MSTEAMS_STATE_DIR`, default
+`~/.claude/channels/msteams/`). Cancel the M365 subscription
 separately, in the admin center, before the trial converts.

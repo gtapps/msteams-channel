@@ -13,7 +13,7 @@ Bun must be on `PATH`. Install from [bun.sh](https://bun.sh).
 
 ```bash
 bun install          # full install, including devDependencies
-bun test             # 249 tests, ~11s — no tenant, no network
+bun test             # 256 tests, ~11s — no tenant, no network
 bun run typecheck    # tsc --noEmit; must pass before committing
 ```
 
@@ -56,8 +56,8 @@ operator at.
    `downloadUrl`s never logged or persisted.
 4. If you touched the inbound pipeline, an outbound tool, `send.ts`, the SDK pin,
    or the MCP `instructions` string, say so in the PR. Those changes are not
-   fully covered by `bun test` and want an [`docs/E2E.md`](docs/E2E.md) run
-   against a live tenant before release.
+   fully covered by `bun test` and require maintainer-run live tenant
+   verification before release.
 
 ## Tests
 

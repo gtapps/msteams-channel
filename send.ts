@@ -27,15 +27,15 @@
  */
 
 import { App } from '@microsoft/teams.apps'
-import { homedir } from 'os'
 import { join } from 'path'
 import { ConversationStore } from './src/conversations.js'
 import { chunkText } from './src/chunk.js'
 import { loadEnvFile } from './src/env.js'
 import { outboundAllowed } from './src/gate.js'
 import { readAccess } from './src/access.js'
+import { stateDir } from './src/state.js'
 
-const STATE_DIR = process.env.MSTEAMS_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'msteams')
+const STATE_DIR = stateDir()
 
 function die(code: number, message: string): never {
   process.stderr.write(`${message}\n`)

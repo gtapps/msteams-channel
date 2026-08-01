@@ -131,7 +131,7 @@ classifier's call, not this plugin's gate, and it is invisible from the Teams
 side: the reply simply never arrives. A denial is logged in
 `~/.claude/debug/<session-id>.txt` as `Auto mode classifier blocked action`.
 
-Tappable Allow/Deny buttons are not built yet — see `docs/ADAPTIVE-CARDS.md`.
+Tappable Allow/Deny buttons are not built; use the one-shot text verdicts above.
 
 ## What the bot will never do
 
@@ -164,7 +164,8 @@ Tappable Allow/Deny buttons are not built yet — see `docs/ADAPTIVE-CARDS.md`.
 
 ## Config file
 
-`~/.claude/channels/msteams/access.json`, mode 0600:
+`<state dir>/access.json`, mode 0600 — where the state dir is
+`MSTEAMS_STATE_DIR`, default `~/.claude/channels/msteams`:
 
 ```json
 {

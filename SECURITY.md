@@ -2,7 +2,7 @@
 
 This plugin sits between a Microsoft Teams tenant and a Claude Code session that
 can run tools on your machine. Everything it refuses, it refuses deliberately;
-the model is described in [`README.md`](README.md#security-model) and
+the model is described in [`README.md`](README.md#security) and
 [`ACCESS.md`](ACCESS.md). This file is about what to do when you find a hole in it.
 
 ## Reporting a vulnerability
@@ -69,13 +69,16 @@ be closed as working-as-designed:
   deliberate exception.
 - **The managed-settings allowlist requirement.** Admitting a third-party channel
   needs root on the machine; that is Claude Code's design, not this plugin's.
-  See [`docs/SETUP.md`](docs/SETUP.md#6b--admit-the-plugin-to-the-channel-allowlist).
+  See [`SETUP.md`](SETUP.md#6b--admit-the-plugin-to-the-channel-allowlist).
 - **Messages are lost while the listener is down.** The queue is persist-before-ack;
   it survives a crash mid-processing, not an offline window. Bot Framework's
   retries are shallow and Teams exposes no history to this plugin.
 - **Anything that presumes access to the operator's machine or shell.** Read
-  access to `~/.claude/channels/msteams/` is read access to the credentials by
+  access to the state dir (`MSTEAMS_STATE_DIR`, default
+  `~/.claude/channels/msteams/`) is read access to the credentials by
   construction — the file modes protect against other users, not against you.
+  If you point `MSTEAMS_STATE_DIR` inside a repository, gitignoring it is yours
+  to do; a committed `.env` is a leak you created, not a plugin vulnerability.
 - **Findings in `@microsoft/teams.apps` / `@microsoft/teams.api` or in Entra
   itself.** Report those to [MSRC](https://msrc.microsoft.com/report). If the SDK
   ships a fix, this plugin's pin bump is a normal release; tell us too so the pin

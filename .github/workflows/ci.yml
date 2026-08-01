@@ -7,7 +7,7 @@ name: CI
 # an Azure subscription, a Teams tenant or a tunnel — so a fork can run it, and
 # no secret is ever exposed to one.
 #
-# Live verification is the operator's smoke test in docs/SETUP.md, not CI.
+# Live verification is the operator's smoke test in SETUP.md, not CI.
 
 on:
   push:

@@ -17,7 +17,6 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import { App } from '@microsoft/teams.apps'
 import { z } from 'zod'
 import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
-import { homedir } from 'os'
 import { join } from 'path'
 import { BunHttpAdapter } from './src/bun-adapter.js'
 import { IngressQueue } from './src/queue.js'
@@ -46,8 +45,9 @@ import { buildImageAttachment, MAX_ATTACHMENTS, type Attachment } from './src/at
 import { AttachmentHandles } from './src/attachments.js'
 import { loadEnvFile } from './src/env.js'
 import { react, GRAPH_REACTIONS } from './src/graph.js'
+import { stateDir } from './src/state.js'
 
-const STATE_DIR = process.env.MSTEAMS_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'msteams')
+const STATE_DIR = stateDir()
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const QUEUE_DIR = join(STATE_DIR, 'queue')
 const CONVERSATIONS_DIR = join(STATE_DIR, 'conversations')

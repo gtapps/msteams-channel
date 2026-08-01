@@ -84,11 +84,11 @@ operator holds that the test suite has no view of:
 1. **Wire-affecting change → the E2E smoke is mandatory.** If this release
    touches the inbound pipeline (`queue`/`gate`/`normalize`), any outbound tool,
    `send.ts`, the SDK pin, or the MCP `instructions` string, the release is not
-   valid on `bun test` alone. Run `docs/E2E.md` against a live tenant, then
-   append the result — build, date, any failed leg — to
-   `.claude-code-hermit/compiled/topic-msteams-e2e-runs.md`, which is gitignored:
-   run records are operator record-keeping, and the public doc carries only the
-   procedure. If the operator cannot run it now, say so plainly and let them
+   valid on `bun test` alone. Follow the private procedure in
+   `.claude-code-hermit/compiled/topic-msteams-e2e-runs.md` against a live
+   tenant, then append the result — build, date and any failed leg — to that
+   gitignored topic. Both the procedure and run records are private operator
+   knowledge. If the operator cannot run it now, say so plainly and let them
    decide whether to ship untested — do not quietly skip it.
 2. **`access.json` schema change** → operators hold a live copy in
    `~/.claude/channels/msteams/`. Any new, renamed, or newly-required key needs
@@ -96,7 +96,7 @@ operator holds that the test suite has no view of:
    already describe it.
 3. **`.env` key change** (`MSTEAMS_APP_ID` / `_APP_PASSWORD` / `_TENANT_ID`, or a
    new `MSTEAMS_*` listener variable) → Upgrade Instructions step, plus the
-   variable table in `README.md` and the relevant step in `docs/SETUP.md`.
+   variable table in `README.md` and the relevant step in `SETUP.md`.
 4. **SDK pin bump** (`@microsoft/teams.apps` / `@microsoft/teams.api`) → at
    minimum a **minor**, and it forces item 1. The pin is the one load-bearing
    upstream; `tests/auth-coverage.test.ts` fails loudly when a release moves the
@@ -104,7 +104,7 @@ operator holds that the test suite has no view of:
    wire still works.
 
 Also confirm the prose still describes reality: `README.md` (tool table,
-enablement, variable table), `ACCESS.md`, `docs/SETUP.md`, `CLAUDE.md`
+enablement, variable table), `ACCESS.md`, `SETUP.md`, `CLAUDE.md`
 invariants. Fix inaccuracies in this release; docs-only corrections go in the
 commit message, **not** the CHANGELOG.
 
@@ -334,7 +334,7 @@ and that the session must be relaunched with
 - Don't tag off a non-`main` branch without the user's explicit go-ahead.
 - Don't skip the production-install check in Step 1 — CI never exercises the path
   every user takes.
-- Don't ship a wire-affecting release on `bun test` alone; either run
-  `docs/E2E.md` or state clearly that it wasn't run.
+- Don't ship a wire-affecting release on `bun test` alone; either run the private
+  E2E procedure or state clearly that it wasn't run.
 - Don't bump the version anywhere before the user has confirmed the level in Step 3.
 - Don't flip the repo to public as a side effect of releasing.
