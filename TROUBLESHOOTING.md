@@ -21,7 +21,7 @@ or not registration succeeded. Never debug from the banner.
 | Symptom / log line | Cause and fix |
 |---|---|
 | `not on the approved channels allowlist` | The managed-settings entry is missing. [SETUP 6b](SETUP.md#6b-allowlist-the-plugin-in-managed-settings). |
-| `channels not enabled by org policy` | `/etc/claude-code/managed-settings.json` exists but omits `"channelsEnabled": true`. The allowlist alone is not enough, and adding the file for the allowlist alone is what usually causes this. [SETUP 6b](SETUP.md#6b-allowlist-the-plugin-in-managed-settings). |
+| `channels not enabled by org policy` | The managed-settings file exists but omits `"channelsEnabled": true`. The allowlist alone is not enough, and adding the file for the allowlist alone is what usually causes this. [SETUP 6b](SETUP.md#6b-allowlist-the-plugin-in-managed-settings). |
 | `not in --channels list for this session` | The entry never resolved to an installed plugin, usually a shadowed MCP server; see the next row. |
 | `Suppressing plugin MCP server "plugin:msteams:msteams": duplicates manually-configured "msteams"` | A stray `--mcp-config` or project `.mcp.json` also defines an `msteams` server. Claude Code silently prefers it: the listener runs happily under `server:msteams` and accepts real Teams traffic while `--channels plugin:msteams@…` points at a server that no longer exists. Delete the stray config and relaunch. |
 | `you asked for plugin:msteams@X but the installed msteams plugin is from Y` | Wrong marketplace name in `--channels`. Use the name from `claude plugin marketplace list`. |
@@ -30,6 +30,7 @@ or not registration succeeded. Never debug from the banner.
 | Installed at user scope, works intermittently | Every session on the machine spawns its own copy and they evict each other on the fixed webhook port. Install at **local** scope. |
 | `--dangerously-load-development-channels` does nothing | Confirmed on v2.1.220: it never enters the entry into the session's channel list and its documented confirmation dialog never appears. Reproduced with Anthropic's own `fakechat` server, so it is not specific to this plugin. Use the managed-settings route. |
 | Teams shows nothing and the bot never responds | Is the listener actually reachable? `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3978/api/messages` locally, then confirm the bot's messaging endpoint in Azure matches your public URL + `/api/messages`. Recreating a devtunnel changes the hostname; the alias is not part of it. |
+| On WSL2, worked until the host slept, then every request 401s | WSL2's clock can drift after host sleep, and skewed time makes Entra JWT validation reject every webhook request. Resync (`sudo hwclock -s`, or `wsl --shutdown` and reopen) and messages flow again. |
 
 ## DMs work, channel messages are ignored
 

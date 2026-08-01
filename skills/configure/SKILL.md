@@ -151,8 +151,10 @@ documents.
   `/msteams:access` take effect immediately — no restart. Credentials are the
   opposite. Be precise about which is which when telling the user what to do.
 - Enabling the channel in Claude Code is a **separate** two-part step from
-  provisioning: an `allowedChannelPlugins` entry in
-  `/etc/claude-code/managed-settings.json` (root-written; that list *replaces*
+  provisioning: an `allowedChannelPlugins` entry in the managed-settings file
+  (`/etc/claude-code/managed-settings.json` on Linux and WSL,
+  `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS;
+  root-written; that list *replaces*
   the default, so every channel already in use must be re-listed) plus launching
   with `--channels plugin:msteams@msteams-channel`. If the user says
   the bot is running but nothing reaches the session, that is where to look —

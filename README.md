@@ -4,20 +4,19 @@
 [![Version](https://img.shields.io/github/v/release/gtapps/msteams-channel?sort=semver)](https://github.com/gtapps/msteams-channel/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> Chat with your local Claude Code session from Microsoft Teams. Self-hosted: your
-> tenant, your ingress, no third-party relay.
+A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)** that
+connects a Microsoft Teams bot to your Claude Code session.
 
-A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)**. When the
-bot receives a message (a DM, or an @-mention in an opted-in channel or group chat),
-the MCP server forwards it to Claude and provides tools to reply and edit messages.
-Replies land in the same conversation or channel thread.
+When the bot receives a message (a DM, or an @-mention in an opted-in channel or
+group chat), the MCP server forwards it to Claude and provides tools to reply
+and edit messages. Replies land in the same conversation or channel thread.
 
-Same access model as the official
+This is the Microsoft Teams counterpart to the official
 [Discord](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord)
 and [Telegram](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/telegram)
-channels (pairing, allowlists, permission relay), with transport and threading adapted
-for Teams via the [Microsoft Agents SDK][sdk]. There is no hosted relay or bot service:
-you run the plugin and its HTTPS ingress, and the bot registration stays in your
+channels, built on the [Microsoft Agents SDK][sdk]. Pairing, allowlists and the
+permission relay work the same. There is no hosted relay or bot service: you run
+the plugin and its HTTPS ingress, and the bot registration stays in your
 Microsoft tenant.
 
 ## Prerequisites
@@ -61,13 +60,17 @@ plugin starts a webhook listener, and a user-scoped install creates port conflic
 
 **3. Allow the community channel.**
 
-On Claude Code v2.1.220+, community channel plugins must be allowlisted in
-`/etc/claude-code/managed-settings.json`, with channels enabled:
+On Claude Code v2.1.220+, community channel plugins must be allowlisted in the
+managed-settings file (`/etc/claude-code/managed-settings.json` on Linux and
+WSL, `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS),
+with channels enabled:
 
 ```json
 {
   "channelsEnabled": true,
-  "allowedChannelPlugins": [{ "marketplace": "msteams-channel", "plugin": "msteams" }]
+  "allowedChannelPlugins": [
+    { "marketplace": "msteams-channel", "plugin": "msteams" }
+  ]
 }
 ```
 
@@ -117,12 +120,12 @@ tenants are refused outright.
 
 ## Tools exposed to the assistant
 
-| Tool | Purpose |
-| --- | --- |
-| `reply` | Reply to a DM, channel, group chat or channel thread. Auto-chunks long text; attaches images. |
-| `edit_message` | Replace the text of a message the bot previously sent. Useful for "working…" → result updates. |
-| `download_attachment` | Download a non-image inbound attachment into the local inbox. |
-| `react` | Returns an explanatory error: Teams reactions need a signed-in user. See [docs/REACTIONS.md](docs/REACTIONS.md). |
+| Tool                  | Purpose                                                                                                          |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `reply`               | Reply to a DM, channel, group chat or channel thread. Auto-chunks long text; attaches images.                    |
+| `edit_message`        | Replace the text of a message the bot previously sent. Useful for "working…" → result updates.                   |
+| `download_attachment` | Download a non-image inbound attachment into the local inbox.                                                    |
+| `react`               | Returns an explanatory error: Teams reactions need a signed-in user. See [docs/REACTIONS.md](docs/REACTIONS.md). |
 
 Proactive sends need no running session:
 
@@ -133,13 +136,13 @@ bun send.ts --conversation <id> --text "Deployment complete"
 
 ## Differences from Discord and Telegram
 
-| Capability | Teams | Discord | Telegram |
-| --- | :-: | :-: | :-: |
-| Reactions | ❌ [why](docs/REACTIONS.md) | ✅ | ✅ |
-| Typing indicator | ❌ | ✅ | ✅ |
-| Outbound files | 🖼️ images only | ✅ | ✅ |
-| Permission prompts | `y <code>` / `n <code>` | ✅ buttons | ✅ buttons |
-| Message history | ❌ | ✅ recent | ❌ |
+| Capability         |            Teams            |  Discord   |  Telegram  |
+| ------------------ | :-------------------------: | :--------: | :--------: |
+| Reactions          | ❌ [why](docs/REACTIONS.md) |     ✅     |     ✅     |
+| Typing indicator   |             ❌              |     ✅     |     ✅     |
+| Outbound files     |       🖼️ images only        |     ✅     |     ✅     |
+| Permission prompts |   `y <code>` / `n <code>`   | ✅ buttons | ✅ buttons |
+| Message history    |             ❌              | ✅ recent  |     ❌     |
 
 Unchecked capabilities are unavailable today, not roadmap commitments.
 
@@ -168,11 +171,11 @@ Microsoft Teams ──HTTPS──> your ingress
 The Microsoft SDK authenticates every request before it reaches plugin code. You own
 the HTTPS edge; the plugin binds localhost by default.
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `MSTEAMS_WEBHOOK_PORT` | `3978` | One port per bot. |
-| `MSTEAMS_WEBHOOK_PATH` | `/api/messages` | Must match the bot's messaging endpoint. |
-| `MSTEAMS_WEBHOOK_HOST` | `127.0.0.1` | Use `0.0.0.0` in Docker and publish the port. |
+| Variable               | Default         | Notes                                         |
+| ---------------------- | --------------- | --------------------------------------------- |
+| `MSTEAMS_WEBHOOK_PORT` | `3978`          | One port per bot.                             |
+| `MSTEAMS_WEBHOOK_PATH` | `/api/messages` | Must match the bot's messaging endpoint.      |
+| `MSTEAMS_WEBHOOK_HOST` | `127.0.0.1`     | Use `0.0.0.0` in Docker and publish the port. |
 
 ### State directory
 
@@ -194,7 +197,7 @@ listener. Running a second project needs its own bot registration end to end; se
 
 - The Microsoft SDK authenticates requests; the plugin enforces the tenant boundary.
 - AAD object IDs grant access; display names never do.
-- Every outbound send requires a conversation the inbound gate already accepted *and*
+- Every outbound send requires a conversation the inbound gate already accepted _and_
   that is still allowed; revocation stops both directions immediately.
 - Permission requests go only to allowlisted DMs and use one-shot verdicts. The relay
   needs `--permission-mode default`; auto mode never asks.

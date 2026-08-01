@@ -258,10 +258,12 @@ they evict each other, so inbound events land nowhere visible.
 ### 6b: Allowlist the plugin in managed settings
 
 Claude Code's default channel allowlist contains only the official plugins. Add
-this entry to the `allowedChannelPlugins` array in
-`/etc/claude-code/managed-settings.json`, and make sure `channelsEnabled` is on.
-Root can edit the local file; on Team and Enterprise plans an administrator can
-set the same values centrally:
+this entry to the `allowedChannelPlugins` array in the managed-settings file,
+and make sure `channelsEnabled` is on. The file lives at
+`/etc/claude-code/managed-settings.json` on Linux and WSL, and
+`/Library/Application Support/ClaudeCode/managed-settings.json` on macOS. Root
+can edit it locally; on Team and Enterprise plans an administrator can set the
+same values centrally:
 
 ```json
 {
