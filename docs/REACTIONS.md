@@ -42,7 +42,7 @@ Microsoft Q&A threads on
 and [sending to a Teams chat](https://learn.microsoft.com/en-us/answers/questions/1059937/precondition-failed-error-while-trying-to-send-mes).
 Same status, same cause, different endpoint.
 
-This plugin authenticates as the application, by design: a hermit runs
+This plugin authenticates as the application, by design: an agent runs
 unattended, with no signed-in user. That is what makes reactions unreachable.
 
 ## Ruled out — do not retry these
@@ -109,12 +109,12 @@ scope in Plan §9. The work, if it is ever wanted:
    `assertSendable`-style guard that keeps `.env` unreadable to outbound sends.
 3. **Per-operation token selection** — reactions use the delegated token,
    everything else keeps the application token. Do *not* make delegated the
-   default; the app-only path is what lets the hermit run unattended.
+   default; the app-only path is what lets the agent run unattended.
 4. **A second consent walkthrough** in `skills/configure/SKILL.md`: delegated
    `ChannelMessage.Send`, `Chat.ReadWrite`, `ChatMessage.Send`, plus
    `offline_access`.
 5. **Reaction attribution changes.** A delegated reaction is attributed to the
-   *signed-in operator*, not to the bot. A 👍 from the hermit would appear in
+   *signed-in operator*, not to the bot. A 👍 from the agent would appear in
    Teams as a 👍 from the person who consented. That is a product decision, not
    just a technical one, and it may be reason enough not to do this.
 

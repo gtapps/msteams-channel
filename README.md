@@ -1,5 +1,9 @@
 # Microsoft Teams channel for Claude Code
 
+[![CI](https://github.com/gtapps/msteams-channel/actions/workflows/ci.yml/badge.svg)](https://github.com/gtapps/msteams-channel/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/gtapps/msteams-channel?sort=semver)](https://github.com/gtapps/msteams-channel/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Chat with Claude Code from Microsoft Teams: direct messages and mention-gated
 channel posts arrive in your session, and Claude replies in the right thread.
 Built directly on the [Microsoft Agents SDK][sdk] (`@microsoft/teams.apps`) —
@@ -29,6 +33,24 @@ Microsoft Teams ──HTTPS──> your ingress (prod: reverse proxy / dev: devt
 
 Every request is validated as an Entra JWT by the Microsoft SDK before it
 reaches any of our code, so an anonymous dev tunnel is safe as a transport.
+
+## Prerequisites
+
+Unlike the Telegram and Discord channels, **Teams has to reach you** — it pushes
+activities to a webhook rather than letting a bot poll. That is the one
+structural difference, and it sets the bar for what you need:
+
+- **[Bun](https://bun.sh)** on `PATH` — the MCP server runs on it. `curl -fsSL https://bun.sh/install | bash`.
+- **A public HTTPS endpoint** that forwards to `127.0.0.1:3978` — a reverse proxy
+  (Caddy) where you have a public IP, Cloudflare Tunnel behind NAT, or Microsoft
+  `devtunnel` for development. The plugin binds localhost and you own the edge.
+- **A Microsoft 365 tenant where you are Global Administrator**, plus an **Azure
+  subscription with the Owner role** to hold the bot. The Azure Bot F0 tier is
+  free; a Business Basic seat is ~$7/user/mo. Full cost table and the traps —
+  including a trial that auto-converts to a twelve-month commitment — are in
+  [docs/SETUP.md](docs/SETUP.md#cost).
+- **Root on the machine running Claude Code**, once, to admit a third-party
+  channel to the allowlist (see below).
 
 ## Install
 
@@ -95,6 +117,7 @@ confirmed against Anthropic's own `fakechat` server under a non-allowlisted name
 which fails the same way. Use the managed-settings route above.
 
 Full walkthrough and a failure-mode table: [`docs/SETUP.md`](docs/SETUP.md#step-6--enabling-the-channel).
+Symptom-first index: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 ## Setup
 
@@ -144,14 +167,26 @@ Listener settings, all optional:
   — the relay only does anything in a session started with
   `--permission-mode default`.
 
+## Troubleshooting
+
+Silence is this channel's normal failure mode — a message that is refused, or
+never registered, produces no reply and no error anywhere the sender can see.
+[**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) is the symptom-first index: start
+with the `Channel notifications` line in `~/.claude/debug/<session-id>.txt`,
+which names the exact cause when nothing arrives at all.
+
 ## Development
 
 ```bash
-bun test          # 248 tests, ~8s, no tenant or network required
+bun test          # 249 tests, ~11s, no tenant or network required
 bun run typecheck # must pass before committing
-bun server.ts     # run the MCP server standalone; stderr is the only log
+bun run dev       # run the MCP server standalone; stderr is the only log
 bun send.ts --list  # proactive-send CLI: what is reachable right now
 ```
+
+Use `bun run dev`, not `bun run start` — `start` is what Claude Code spawns and
+installs production dependencies only, which prunes the devDependencies your
+tests need. Full guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 CI runs exactly `bun run typecheck` and `bun test` — deliberately tenant-free,
 so a fork can run it and no secret is ever exposed to one. Live verification is
@@ -161,6 +196,30 @@ One caveat when debugging a running session: **an MCP server's stderr reaches
 `~/.claude/debug/<session-id>.txt` only at startup.** Mid-session writes go
 nowhere, so server-side logging is a dev aid when running standalone, never
 something to ask an operator to read live.
+
+## Uninstall
+
+```
+/plugin uninstall msteams@msteams-channel
+/plugin marketplace remove msteams-channel
+```
+
+Then remove the managed-settings entry from `/etc/claude-code/managed-settings.json`
+(leaving any other channel you use in the list), and delete
+`~/.claude/channels/msteams/` — it holds your credentials, access policy and
+queued activities. Tearing down the Azure side is
+[docs/SETUP.md § Teardown](docs/SETUP.md#teardown); cancel the M365 subscription
+separately, in the admin center, before a trial converts.
+
+## Support
+
+Bugs and questions: [open an issue](https://github.com/gtapps/msteams-channel/issues).
+Include the `Channel notifications` log line (or its absence) and your Claude
+Code version, and **redact tenant ids, AAD object ids, conversation ids and any
+`tempauth=` URL** — those are credentials.
+
+Suspected security issue: [SECURITY.md](SECURITY.md) — report it privately, not
+as an issue. Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

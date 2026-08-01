@@ -29,7 +29,7 @@ function fakeGraph(fail?: () => never): { graph: GraphLike; calls: { url: string
 const CHAT = { conversationId: 'a:1personal' }
 const CHANNEL = {
   conversationId: '19:abc@thread.tacv2;messageid=111',
-  teamId: '59e7c505-802c-476a-9452-bfe8b5a8c2ea',
+  teamId: '33333333-3333-4333-8333-333333333333',
   channelId: '19:abc@thread.tacv2',
 }
 

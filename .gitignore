@@ -1,11 +1,13 @@
 node_modules/
 *.DS_Store
-.claude/
+.claude/*
+!.claude/skills/
 .env
 
 
-# claude-code-hermit — operator's own state, never part of the plugin
+# Local agent scaffolding — operator's own state, never part of the plugin
 .claude-code-hermit/
+.worktreeinclude
 .claude/cost-log.jsonl
 .claude/scheduled_tasks.lock
 .claude.local/
@@ -20,3 +22,6 @@ CLAUDE.local.md
 .profile
 .gitconfig
 .ripgreprc
+
+# Graphify
+/graphify-out

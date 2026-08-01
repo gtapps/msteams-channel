@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Proactive send, for consumers with no live turn (Experiment 4).
+ * Proactive send, for consumers with no live turn.
  *
- * A hermit sending a notice is not replying to anything, so there is no turn
+ * An agent sending a notice is not replying to anything, so there is no turn
  * context and no MCP session — just a stored conversation reference and the
  * app's own client credentials. Same outbound gate as the `reply` tool: a
  * conversation must both have been accepted inbound at some point (which is
  * the only way a reference gets written) and still be allowed by the current
  * access.json.
  *
- * **This interface is a contract surface.** The hermit integration shells out
+ * **This interface is a contract surface.** The consuming agent shells out
  * to this CLI and must never parse the state dir itself, so the flags and the
  * exit codes are the API, and the on-disk format stays free to change.
  *

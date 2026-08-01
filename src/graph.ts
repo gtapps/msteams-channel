@@ -18,7 +18,7 @@
  *    in its codebase, both of them reactions. Full evidence and the open
  *    remove-vs-keep decision: `docs/REACTIONS.md`.
  *
- * Everything here degrades: a hermit that cannot add a thumbs-up is mildly
+ * Everything here degrades: an agent that cannot add a thumbs-up is mildly
  * worse; one that fails to reply is broken.
  */
 

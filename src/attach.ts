@@ -9,10 +9,10 @@
  *   channel/group + not an image        -> SharePoint upload via Graph
  *   anything else, i.e. a small image   -> inline `data:` URI, one call
  *
- * Only the last route is synchronous, and it is the one that matters for a
- * hermit: charts, screenshots and diagrams are images. So that is what we
+ * Only the last route is synchronous, and it is the one that matters for an
+ * agent: charts, screenshots and diagrams are images. So that is what we
  * implement, and the other two return an explanation rather than failing
- * obscurely — the same "degradable" stance the plan takes for `react`.
+ * obscurely — the same "degradable" stance we take for `react`.
  *
  * Not `src/attachments.ts`: that one handles INBOUND attachments (classifying
  * and fetching what senders sent). This one only builds outbound payloads.

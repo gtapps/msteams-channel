@@ -104,9 +104,9 @@ long-lived dev host needs periodic re-login.
 ```bash
 curl -sL https://aka.ms/DevTunnelCliInstall | bash
 devtunnel user login          # -d for device code on a headless box
-devtunnel create hermit-msteams-dev -a
-devtunnel port create hermit-msteams-dev -p 3978 --protocol http
-devtunnel host hermit-msteams-dev
+devtunnel create msteams-dev -a
+devtunnel port create msteams-dev -p 3978 --protocol http
+devtunnel host msteams-dev
 ```
 
 **`--protocol http` is deliberate and easy to get wrong.** That flag describes
@@ -121,7 +121,7 @@ returns 401 locally, this is the cause.
 
 **Do not construct the tunnel URL from the tunnel ID.** The public hostname uses
 an opaque generated token, *not* the alias you pinned — a tunnel created as
-`hermit-msteams-dev` is reachable at something shaped like
+`msteams-dev` is reachable at something shaped like
 `https://<8-char-token>-3978.<cluster>.devtunnels.ms`, with no trace of the
 alias in it. Read the URL from the `devtunnel host` output and use it verbatim.
 
@@ -138,7 +138,7 @@ activity.
 
 ```bash
 APPID=$(az ad app create \
-  --display-name "hermit-msteams-channel" \
+  --display-name "msteams-channel" \
   --sign-in-audience AzureADMyOrg \
   --query appId -o tsv)
 ```
@@ -170,7 +170,7 @@ STATE="$HOME/.claude/channels/msteams"
 mkdir -p "$STATE" && chmod 700 "$STATE"
 umask 077
 PW=$(az ad app credential reset --id "$APPID" --append --years 1 \
-       --display-name "hermit-msteams" --query password -o tsv)
+       --display-name "msteams-channel" --query password -o tsv)
 printf 'MSTEAMS_APP_ID=%s\nMSTEAMS_APP_PASSWORD=%s\nMSTEAMS_TENANT_ID=%s\n' \
   "$APPID" "$PW" "$TENANT_ID" > "$STATE/.env"
 chmod 600 "$STATE/.env"
@@ -180,9 +180,9 @@ PW=""
 Then the resource group and the bot, using the tunnel URL from step 3:
 
 ```bash
-az group create -n rg-msteams-hermit -l westeurope
+az group create -n rg-msteams-channel -l westeurope
 az bot create \
-  --resource-group rg-msteams-hermit \
+  --resource-group rg-msteams-channel \
   --name <globally-unique-bot-name> \
   --app-type SingleTenant \
   --appid "$APPID" \
@@ -443,9 +443,9 @@ point one subdomain at each behind a single proxy.
 The whole experiment unwinds cleanly because everything lives in one group:
 
 ```bash
-az group delete -n rg-msteams-hermit --yes
+az group delete -n rg-msteams-channel --yes
 az ad app delete --id "$APPID"
-devtunnel delete hermit-msteams-dev
+devtunnel delete msteams-dev
 ```
 
 Then remove `~/.claude/channels/msteams/`. Cancel the M365 subscription

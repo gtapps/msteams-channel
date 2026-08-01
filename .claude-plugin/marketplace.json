@@ -3,12 +3,30 @@
   "owner": {
     "name": "gtapps"
   },
+  "metadata": {
+    "description": "The Microsoft Teams channel plugin for Claude Code — chat with your sessions from Teams DMs and mention-gated channel posts."
+  },
   "plugins": [
     {
       "name": "msteams",
       "description": "Microsoft Teams channel for Claude Code — DMs and mention-gated channel messages over the Microsoft Agents SDK, with tenant/sender allowlists and pairing.",
+      "version": "0.0.1",
       "category": "productivity",
-      "source": "./"
+      "source": "./",
+      "author": {
+        "name": "gtapps"
+      },
+      "license": "MIT",
+      "homepage": "https://github.com/gtapps/msteams-channel",
+      "repository": "https://github.com/gtapps/msteams-channel",
+      "keywords": [
+        "msteams",
+        "teams",
+        "microsoft",
+        "messaging",
+        "channel",
+        "mcp"
+      ]
     }
   ]
 }

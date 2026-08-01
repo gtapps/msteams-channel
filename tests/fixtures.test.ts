@@ -16,6 +16,7 @@ import { normalize } from '../src/normalize.js'
 
 const DIR = join(import.meta.dir, 'fixtures')
 const load = (name: string) => JSON.parse(readFileSync(join(DIR, name), 'utf8')) as Record<string, any>
+const fixtureFiles = () => readdirSync(DIR).filter(n => n.endsWith('.json'))
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
 const SENDER = '22222222-2222-4222-8222-222222222222'
@@ -35,7 +36,7 @@ describe('scrubbing held', () => {
     // dm-attachment-image.json, which was exhaustive purely because it is the
     // one capture bearing a file. The next multi-file capture would have been
     // scrubbed by nobody.
-    const names = readdirSync(DIR).filter(n => n.endsWith('.json'))
+    const names = fixtureFiles()
     expect(names.length).toBeGreaterThan(1)
 
     for (const name of names) {
@@ -50,11 +51,31 @@ describe('scrubbing held', () => {
     // The scrubber substitutes same-shape values; these are the ones every
     // other test in this file asserts against, so a fixture refreshed from a
     // live capture without re-scrubbing fails here.
-    for (const name of readdirSync(DIR).filter(n => n.endsWith('.json'))) {
+    for (const name of fixtureFiles()) {
       const raw = readFileSync(join(DIR, name), 'utf8')
       const tenants = new Set(raw.match(/"tenantId"\s*:\s*"([^"]+)"/g) ?? [])
       for (const match of tenants) {
         expect(`${name}: ${match}`).toContain(TENANT)
+      }
+    }
+  })
+
+  test('no display name, filename or client locale is capture residue', () => {
+    // Ids are obvious to scrub; these are not. A re-capture puts the tenant's
+    // real team name, the bot's real name, whatever file the operator happened
+    // to attach and their own timezone straight back into these files, and none
+    // of it is load-bearing for any test. Assert the allowed stand-ins rather
+    // than blocklisting the old values, which would only re-record them here.
+    const ALLOWED = new Set(['Test Sender', 'Test Team', 'test-bot', 'test-image.jpg', 'message'])
+
+    for (const file of fixtureFiles()) {
+      const raw = readFileSync(join(DIR, file), 'utf8')
+
+      for (const [, value] of raw.matchAll(/"name"\s*:\s*"([^"]+)"/g)) {
+        expect({ file, value, allowed: ALLOWED.has(value) }).toMatchObject({ allowed: true })
+      }
+      for (const [, value] of raw.matchAll(/"(?:timezone|localTimezone)"\s*:\s*"([^"]+)"/g)) {
+        expect({ file, value }).toMatchObject({ value: 'UTC' })
       }
     }
   })
@@ -211,7 +232,7 @@ describe('attachments', () => {
       (x: any) => x.contentType === 'application/vnd.microsoft.teams.file.download.info',
     )
     expect(files).toHaveLength(1)
-    expect(files[0].name).toBe('wallhaven-k81776.jpg')
+    expect(files[0].name).toBe('test-image.jpg')
     expect(files[0].content.fileType).toBe('jpg')
     expect(ATTACHMENT.attachments).toHaveLength(2) // the file plus the html body
   })

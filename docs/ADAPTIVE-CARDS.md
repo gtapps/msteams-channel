@@ -42,7 +42,7 @@ that only appeared against a live tenant. Send one card to the live tenant,
 press the button, and read what the adapter receives.
 
 If it is an invoke activity, note that the same missing handler blocks the
-deferred Tier 2 file-upload work (`FileConsentCard` replies are invokes), so the
+deferred non-image file-upload work (`FileConsentCard` replies are invokes), so the
 two features share a prerequisite and should probably be built together.
 
 Then:
@@ -64,8 +64,8 @@ Then:
 
 The text verdict is functionally complete: the operator can allow or deny from
 their phone, which is the point. Buttons are ergonomics. They also carry the
-unverified-platform-behavior risk above, and the MVP's remaining gates (M5, M6)
-do not depend on them.
+unverified-platform-behavior risk above, and nothing else on the MVP path
+depends on them.
 
-Pick this up after M6, alongside Tier 2 file uploads if they turn out to share
-the invoke-handler prerequisite.
+Pick this up after the MVP ships, alongside non-image file uploads if they turn
+out to share the invoke-handler prerequisite.

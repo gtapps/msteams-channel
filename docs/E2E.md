@@ -15,7 +15,7 @@ this assumes a working bot.
 ## Preconditions
 
 ```bash
-devtunnel host hermit-msteams-dev        # leave running; note the public URL
+devtunnel host msteams-dev        # leave running; note the public URL
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3978/api/messages
 ```
 
@@ -105,7 +105,7 @@ From a Teams account **not** on the allowlist, DM the bot.
 
 ### 7. Proactive CLI send
 
-No session needed — this is the path the hermit integration uses.
+No session needed — this is the path an agent integration uses.
 
 ```bash
 bun send.ts --list
@@ -120,7 +120,7 @@ echo 'from stdin' | bun send.ts --conversation <id>
 ### 8. Permission verdict
 
 **Needs its own session** — the relay emits nothing under `--permission-mode
-auto`, which is the fleet default:
+auto`, which is the usual choice for an unattended session:
 
 ```bash
 claude --permission-mode default --channels plugin:msteams@msteams-channel
@@ -136,96 +136,32 @@ Ask Claude to do something requiring approval (e.g. run a shell command).
 
 ## Recording the result
 
-Note the commit, the date, and any leg that failed. A failed leg is a release
-blocker unless it is one of the two documented known-impossible items
-(reactions; non-image outbound files).
+Note the commit under test, the date, and any leg that failed, wherever you track
+releases. A failed leg is a release blocker unless it is one of the two
+documented known-impossible items (reactions; non-image outbound files).
 
-### Run log
+## Pitfalls
 
-**2026-07-31.** Legs 1–2 verified on `cf26d90`; legs 3–5 and 7–8 on `8f26992`
-after the second instructions fix.
+Things a run has actually surfaced, kept here so the next one does not rediscover
+them:
 
-| Leg | Result |
-|---|---|
-| 1 DM → threaded reply | **pass** (after finding 1) |
-| 2 channel mention → threaded reply | **pass** |
-| 3 inbound attachments | **pass** (after finding 2) |
-| 4 outbound image + refusals | **pass** |
-| 5 `edit_message`, `react` 412 | **pass** |
-| 6 pairing and revocation | **pass** — run without a second account, see below |
-| 7 proactive CLI send | **pass** — `--list` marking correct, `--text` and stdin both exit 0 with ids, unknown conversation exit 3 without sending |
-| 8 permission verdict | **pass** — request relayed to the DM, `y <code>` honoured |
-
-**8 of 8 pass.**
-
-Leg 6 needs an unknown sender, which looks like it needs a second Teams account.
-It does not: set `dmPolicy` to `pairing` and remove your own AAD object id from
-`allowFrom`, and you become a stranger to your own bot. That exercises the whole
-leg with one account — only genuinely-different-person cases (another human
-pairing, per-sender allowlists inside a channel) stay out of reach, and neither
-is on the MVP path.
-
-Observed, in order:
-
-1. `send.ts` to the revoked DM → **exit 3** `sender_not_allowed`, with no
-   restart. The gate re-read `access.json` on the spot. This is the
-   anti-exfiltration property: a stored conversation reference is a claim about
-   the past, not standing authority.
-2. `--list` flipped that conversation to `unreachable:sender_not_allowed` while
-   both channels stayed `reachable` — correct, since a group with
-   `allowFrom: []` admits anyone in it and only DMs were revoked.
-3. A DM from the now-unknown sender produced a 6-hex pairing code **in Teams and
-   nothing in the session** — the revoked-inbound drop, exercised at the same time.
-4. Writing `approved/<senderId>` with the conversation id as its contents was
-   consumed by the server in **~1s** (poll interval is ~5s), and the "Paired!"
-   confirmation went out.
-5. `send.ts` to the same DM → **exit 0** with a message id. Outbound restored.
-
-The one thing worth noting for anyone repeating this: the id `send.ts` wants is
-the Bot Framework conversation id from `--list` (`a:1...`), not the
-`19:...@unq.gbl.spaces` id in a Teams chat deep link. Passing the latter exits 3
-with "no inbound conversation on record", which is correct but reads like a
-gate refusal rather than a wrong-id-space mistake.
-
-Leg 3 also confirmed the multi-attachment fix against the live tenant: two images
-in one message both arrived and both were readable — precisely the case that
-used to deliver one and drop the other with no count and no listing.
-
-#### Finding 1 — instructions were being truncated (`cf26d90`)
-
-Leg 1 failed first time. The message was delivered (`notifications/claude/channel`
-in the debug log) but the model answered in the terminal, so the sender got
-silence. Investigating surfaced an unrelated, older defect: **Claude Code
-truncates MCP server instructions at 2048 characters**, announced only in a
-`[DEBUG]` line. Ours were 2224, so the tail of the prompt-injection rule had been
-deleted at every session start since M1 — and the contract test meant to catch
-exactly that passed throughout, because it asserted against the raw `initialize`
-response rather than the 2048 characters the model receives. Instructions are now
-inside the budget, and the budget is pinned by a test.
-
-This did **not** explain the failed leg: the reply-routing paragraph is first and
-always survived. That cause is finding 2.
-
-#### Finding 2 — a local action with no return path (`8f26992`)
-
-Legs 1 and 2 were single-response turns and routed to `reply` correctly. Leg 3
-began with `Read` calls for the attached images — and no reply followed. The
-attachment instruction ended on a *local* action ("just Read it") with no return
-path, so once the files were read the turn looked finished. Two sentences fixed
-it: a general rule that a turn beginning with a Teams message is not finished
-until `reply` has been called, however many other tools ran first, and a closing
-line that reading a file is not answering. Confirmed by re-running leg 3.
-
-So legs 1 and 3 shared one root cause. **The lesson generalizes past this
-plugin:** in channel instructions, every branch that tells the model to act
-locally must name the return path, or the sender gets silence while the terminal
-gets the answer — and the failure is invisible from the Teams side.
-
-#### Note for future runs
-
-Under `--permission-mode default` every `reply` prompts for approval, and that
-prompt is itself relayed to Teams. The circularity is harmless — verdicts are
-intercepted on the inbound path, which does not depend on the tool being gated —
-but approving `reply` once at the start makes the run much less tedious.
-
-Last full pass: **2026-07-31, 8 of 8** (legs 1–2 on `cf26d90`, the rest on `8f26992`).
+- **A reply that never leaves the terminal.** If the model answers in the session
+  but the sender gets silence, suspect the MCP `instructions` string rather than
+  the wire — the message *was* delivered. Two causes have shown up: instructions
+  exceeding the **2048-character budget** Claude Code silently truncates them to
+  (announced only in a `[DEBUG]` line, and now pinned by a test), and an
+  instruction branch that ends on a *local* action with no return path, so the
+  turn looks finished once the local work is done. The general rule: every branch
+  that tells the model to act locally must also name the way back to `reply`.
+- **`send.ts` wants the Bot Framework conversation id** from `--list` (`a:1…`),
+  not the `19:…@unq.gbl.spaces` id in a Teams chat deep link. The latter exits 3
+  with "no inbound conversation on record" — correct, but it reads like a gate
+  refusal rather than a wrong-id-space mistake.
+- **Approve `reply` once at the start of leg 8.** Under `--permission-mode
+  default` every `reply` prompts, and that prompt is itself relayed to Teams. The
+  circularity is harmless — verdicts are intercepted on the inbound path, which
+  does not depend on the tool being gated — but it makes the run tedious.
+- **Leg 6 does not need a second Teams account.** Set `dmPolicy` to `pairing` and
+  remove your own AAD object id from `allowFrom`, and you are a stranger to your
+  own bot. Only genuinely-different-person cases (another human pairing,
+  per-sender allowlists inside a channel) stay out of reach.

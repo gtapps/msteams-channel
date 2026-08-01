@@ -2,6 +2,12 @@
   "name": "msteams",
   "description": "Microsoft Teams channel for Claude Code — DMs and mention-gated channel messages over the Microsoft Agents SDK, with tenant/sender allowlists and pairing. Manage access via /msteams:access.",
   "version": "0.0.1",
+  "author": {
+    "name": "gtapps"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/gtapps/msteams-channel",
+  "repository": "https://github.com/gtapps/msteams-channel",
   "keywords": [
     "msteams",
     "teams",

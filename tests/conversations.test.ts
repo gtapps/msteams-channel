@@ -13,7 +13,7 @@ const activity = (over: Record<string, any> = {}) => ({
   id: 'a1',
   serviceUrl: 'https://smba.trafficmanager.net/teams/',
   conversation: { id: 'a:1conv', conversationType: 'personal', tenantId: TENANT },
-  recipient: { id: '28:bot', name: 'hermit' },
+  recipient: { id: '28:bot', name: 'test-bot' },
   channelData: { tenant: { id: TENANT } },
   ...over,
 })

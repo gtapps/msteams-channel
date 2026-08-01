@@ -6,7 +6,7 @@
   ],
   "type": "conversationUpdate",
   "timestamp": "2026-07-31T17:12:21.734Z",
-  "id": "f:ba320725-7296-b6d5-816f-8d648d8111d1",
+  "id": "f:77777777-7777-4777-8777-777777777777",
   "channelId": "msteams",
   "serviceUrl": "https://smba.trafficmanager.net/emea/11111111-1111-4111-8111-111111111111/",
   "from": {
@@ -26,7 +26,7 @@
   "channelData": {
     "team": {
       "aadGroupId": "33333333-3333-4333-8333-333333333333",
-      "name": "gtapps",
+      "name": "Test Team",
       "id": "19:CHANNEL_THREAD_ID@thread.tacv2"
     },
     "eventType": "teamMemberAdded",

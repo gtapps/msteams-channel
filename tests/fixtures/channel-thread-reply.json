@@ -1,15 +1,15 @@
 {
-  "text": "<at>Hermit</at> hello2",
+  "text": "<at>test-bot</at> hello2",
   "textFormat": "plain",
   "attachments": [
     {
       "contentType": "text/html",
-      "content": "<p><span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">Hermit</span>&nbsp;hello2</p>"
+      "content": "<p><span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">test-bot</span>&nbsp;hello2</p>"
     }
   ],
   "type": "message",
   "timestamp": "2026-07-31T17:17:04.5422662Z",
-  "localTimestamp": "2026-07-31T18:17:04.5422662+01:00",
+  "localTimestamp": "2026-07-31T17:17:04.5422662+00:00",
   "id": "1785518224498",
   "channelId": "msteams",
   "serviceUrl": "https://smba.trafficmanager.net/emea/11111111-1111-4111-8111-111111111111/",
@@ -32,16 +32,16 @@
     {
       "mentioned": {
         "id": "28:44444444-4444-4444-8444-444444444444",
-        "name": "Hermit"
+        "name": "test-bot"
       },
-      "text": "<at>Hermit</at>",
+      "text": "<at>test-bot</at>",
       "type": "mention"
     },
     {
       "locale": "en-US",
       "country": "US",
       "platform": "Web",
-      "timezone": "Europe/Lisbon",
+      "timezone": "UTC",
       "type": "clientInfo"
     }
   ],
@@ -60,5 +60,5 @@
     }
   },
   "locale": "en-US",
-  "localTimezone": "Europe/Lisbon"
+  "localTimezone": "UTC"
 }

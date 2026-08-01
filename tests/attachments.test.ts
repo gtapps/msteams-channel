@@ -40,7 +40,7 @@ describe('classification', () => {
 
     expect(files).toHaveLength(1)
     expect(files[0].kind).toBe('image')
-    expect(files[0].name).toBe('wallhaven-k81776.jpg')
+    expect(files[0].name).toBe('test-image.jpg')
   })
 
   test('the same activity always yields the same handle', () => {

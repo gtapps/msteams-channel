@@ -9,8 +9,22 @@ before being recorded), then scrubbed.
 Identifiers are replaced with stand-ins **of the same shape**, because the code
 under test parses that shape — `;messageid=`, the `29:`/`28:`/`19:` prefixes,
 `@thread.tacv2`. Flattening them would make the fixtures test the wrong thing.
-Replaced: tenant id, sender AAD object id, team AAD group id, sender thread id,
-display name, bot id and name, channel thread id, personal conversation id.
+
+Replaced — **everything in this list, on every re-capture:**
+
+- tenant id, sender AAD object id, team AAD group id
+- sender thread id, channel thread id, personal conversation id
+- bot id, and the **activity id** of non-message activities (the `f:<uuid>` form)
+- an attached file's `content.uniqueId`
+- every display name: sender (`Test Sender`), bot (`test-bot`, including inside
+  `<at>` text and the rendered HTML body), team (`Test Team`)
+- the attached file's `name` (`test-image.jpg`) — a real capture carries whatever
+  the operator happened to attach
+- `clientInfo.timezone` and `localTimezone` (`UTC`), and the matching
+  `localTimestamp` offset — a real one locates whoever ran the capture
+
+The last four are the easy ones to forget, so `fixtures.test.ts` asserts the
+allowed values positively rather than blocklisting the old ones.
 
 Attachment URLs are **redacted outright, not mapped**. A Teams file attachment's
 `content.downloadUrl` carries a live `tempauth=` bearer token granting read

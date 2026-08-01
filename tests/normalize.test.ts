@@ -11,7 +11,7 @@ const dmActivity = () => ({
   text: 'hello',
   from: { id: '29:1abc', name: 'Test User', aadObjectId: OID },
   conversation: { id: 'a:1conv', conversationType: 'personal', tenantId: TENANT },
-  recipient: { id: '28:bot', name: 'hermit' },
+  recipient: { id: '28:bot', name: 'test-bot' },
   channelData: { tenant: { id: TENANT } },
 })
 

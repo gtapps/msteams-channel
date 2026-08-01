@@ -1,7 +1,7 @@
 /**
  * Contract test for the `send.ts` CLI, spawned as a real process.
  *
- * This CLI is a **frozen surface**: the hermit integration shells out to it and
+ * This CLI is a **frozen surface**: the consuming agent shells out to it and
  * reads its exit codes rather than the state dir, so the flags and the codes
  * are the API. Every claim about them rested on reading the source until this
  * file existed.
@@ -100,7 +100,7 @@ describe('--list', () => {
   })
 
   test('marks a revoked DM unreachable, with the reason', async () => {
-    // The M4 review's finding: --list once advertised a revoked conversation as
+    // A review finding: --list once advertised a revoked conversation as
     // reachable, so the operator got a positive signal and then exit 3.
     putRef({ conversationId: DM_ID, senderId: SENDER })
     putAccess({ allowFrom: [] })
@@ -262,7 +262,7 @@ describe('exit 3 — the outbound gate', () => {
 
 describe('state-dir contract', () => {
   test('MSTEAMS_STATE_DIR relocates everything the CLI reads', async () => {
-    // The hermit slice depends on this: it points the CLI at a state dir and
+    // The consuming agent depends on this: it points the CLI at a state dir and
     // never parses what is inside it.
     putRef({ conversationId: DM_ID, senderId: SENDER })
     putAccess({ allowFrom: [SENDER] })
