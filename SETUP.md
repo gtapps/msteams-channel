@@ -9,10 +9,11 @@ Nothing phones home: you own the bot, the credentials and the HTTPS endpoint.
 
 ## Agent-assisted setup
 
-From this repository checkout, give Claude Code the following prompt:
+Give Claude Code the following prompt:
 
 ```text
-Help me set up msteams-channel by following SETUP.md in order.
+Help me set up msteams-channel by following SETUP.md in order. Fetch it from
+https://raw.githubusercontent.com/gtapps/msteams-channel/main/SETUP.md.
 
 Start with read-only checks. Verify Azure CLI, my active Microsoft organization,
 Azure subscription and required roles. Explain the resources and costs before
