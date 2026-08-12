@@ -380,10 +380,20 @@ there are uploaded to a SharePoint site you designate and shared from it.
    MSTEAMS_SHAREPOINT_SITE_ID=contoso.sharepoint.com,<guid>,<guid>
    ```
 
-Restart the session to pick it up. Group-chat sends additionally read the chat's
-member list through Bot Framework (no extra Graph permission) so the sharing
-link covers only those people; if that read fails, the send fails rather than
-sharing more widely.
+Restart the session to pick it up, then check the whole chain before involving
+Teams:
+
+```bash
+bun probe-files.ts --site "<site-id>" [--recipient <your-aad-object-id>]
+```
+
+It runs the same calls the channel does, in the same order, and cleans up after
+itself: upload, the no-overwrite check, the item lookup, both link types, and
+the delete. `--ls` lists what the channel has uploaded so far.
+
+Group-chat sends additionally read the chat's member list through Bot Framework
+(no extra Graph permission) so the sharing link covers only those people; if
+that read fails, the send fails rather than sharing more widely.
 
 ## If setup fails
 
