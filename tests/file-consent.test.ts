@@ -469,6 +469,40 @@ describe('handleFileConsentInvoke', () => {
     expect(readdirSync(dir)).toHaveLength(0)
   })
 
+  test('a decline replaces the card, so it cannot be answered twice', async () => {
+    // Observed live: Teams leaves a declined card on screen with its buttons
+    // live, so the recipient cannot tell the click registered and clicks again.
+    const id = offer()
+    store.setConsentCardActivityId(id, 'card-activity-1')
+
+    await handleFileConsentInvoke(
+      invoke({}, { action: 'decline', uploadInfo: undefined, context: { uploadId: id } }),
+      deps,
+    )
+
+    expect(updates[0].activityId).toBe('card-activity-1')
+    expect(String(updates[0].activity.text)).toMatch(/declined/i)
+    expect(String(updates[0].activity.text)).toContain('report.pdf')
+    expect(sent).toHaveLength(0)
+  })
+
+  test('a decline whose card cannot be edited says nothing instead', async () => {
+    // A second message under a card the recipient already answered is noise.
+    const id = offer()
+    store.setConsentCardActivityId(id, 'card-activity-1')
+    deps.update = async () => {
+      throw new Error('activity too old to edit')
+    }
+
+    await handleFileConsentInvoke(
+      invoke({}, { action: 'decline', uploadInfo: undefined, context: { uploadId: id } }),
+      deps,
+    )
+
+    expect(sent).toHaveLength(0)
+    expect(readdirSync(dir)).toHaveLength(0)
+  })
+
   test('an upload failure tells the recipient and frees the record', async () => {
     const id = offer()
     deps.upload = async () => {

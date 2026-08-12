@@ -402,6 +402,20 @@ export async function handleFileConsentInvoke(
     deps.log(`consent invoke ${short}: declined`)
     deps.store.settle(uploadId)
     deps.settled.set(uploadId, now)
+    // Teams does not resolve a declined card: it stays on screen with its
+    // buttons live, so the recipient cannot tell the click registered and
+    // reasonably clicks again. Replace it. OpenClaw leaves the card alone,
+    // which is where that dead-end came from. On failure stay silent rather
+    // than adding a second message under a card the sender already answered.
+    if (claimed.meta.consentCardActivityId) {
+      await deps
+        .update(claimed.meta.consentCardActivityId, {
+          type: 'message',
+          text: `Declined: ${claimed.meta.filename}`,
+          textFormat: 'plain',
+        })
+        .catch(() => {})
+    }
     return
   }
 
