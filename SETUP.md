@@ -305,10 +305,23 @@ above.
 Optional, and only for files. Text, inline images (under 4MB) and DM file sends
 work with nothing here.
 
-**Prerequisite for DM file sends: the Teams app manifest must set
-`supportsFiles: true`.** Without it Teams renders the consent card without an
-Accept button, and nothing you change on the server side will help. Check the
-manifest you uploaded in Step 5, add the property, and re-upload if missing.
+**Prerequisite for DM file sends: an app package whose manifest sets
+`supportsFiles: true`.**
+
+Steps 4 and 5 register the bot in Azure and enable its Teams channel, which is
+enough to DM it through its deep link
+(`https://teams.microsoft.com/l/chat/0/0?users=28:<app-id>`). That path uploads
+no app package, so a tenant set up only that way has no manifest and nowhere to
+set this property. Microsoft documents `supportsFiles` as the switch for a bot
+sending files in a personal chat, so DM file sends need a package created and
+sideloaded (Teams client, Apps, Manage your apps, Upload an app). Not yet
+verified against this tenant: the symptom to watch for is a consent card that
+renders with no Accept button.
+
+Channel and group chat file sends do not depend on this. They upload through
+Graph to the SharePoint site configured below, so they need only that site and
+its grant. Getting the bot into a team in the first place does require an
+installed app package.
 
 Outside a DM a bot has no personal drive to upload to (Graph's `/me` needs a
 signed-in user, and this channel authenticates as the application), so files
