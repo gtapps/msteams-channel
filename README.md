@@ -118,11 +118,15 @@ display names never grant access). Default policy is `pairing`. Channels and gro
 chats are opt-in per conversation ID and mention-gated by default. Messages from other
 tenants are refused outright.
 
+Adding the bot to a team or group chat installs a Teams app, so it needs an app
+package: `./teams-app/build.sh` builds one from your bot id. DMs need none of this.
+See [SETUP.md](SETUP.md#adding-the-bot-to-a-team-or-group-chat).
+
 ## Tools exposed to the assistant
 
 | Tool                  | Purpose                                                                                                          |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `reply`               | Reply to a DM, channel, group chat or channel thread. Auto-chunks long text; attaches images.                    |
+| `reply`               | Reply to a DM, channel, group chat or channel thread. Auto-chunks long text; attaches files.                     |
 | `edit_message`        | Replace the text of a message the bot previously sent. Useful for "working…" → result updates.                   |
 | `download_attachment` | Download a non-image inbound attachment into the local inbox.                                                    |
 | `react`               | Returns an explanatory error: Teams reactions need a signed-in user. See [docs/REACTIONS.md](docs/REACTIONS.md). |
@@ -132,6 +136,7 @@ Proactive sends need no running session:
 ```bash
 bun send.ts --list
 bun send.ts --conversation <id> --text "Deployment complete"
+bun send.ts --conversation <id> --files ./report.pdf
 ```
 
 ## Differences from Discord and Telegram
@@ -140,7 +145,7 @@ bun send.ts --conversation <id> --text "Deployment complete"
 | ------------------ | :-------------------------: | :--------: | :--------: |
 | Reactions          | ❌ [why](docs/REACTIONS.md) |     ✅     |     ✅     |
 | Typing indicator   |             ❌              |     ✅     |     ✅     |
-| Outbound files     |       🖼️ images only        |     ✅     |     ✅     |
+| Outbound files     |       ✅ [how](#attachments)       |     ✅     |     ✅     |
 | Permission prompts |   `y <code>` / `n <code>`   | ✅ buttons | ✅ buttons |
 | Message history    |             ❌              | ✅ recent  |     ❌     |
 
@@ -150,8 +155,31 @@ Unchecked capabilities are unavailable today, not roadmap commitments.
 
 Inbound images are downloaded automatically to `<state dir>/inbox/`; other file types
 are listed in the notification and fetched on demand with `download_attachment`.
-Outbound is **images only**: PNG, JPEG, GIF, WebP, BMP, under 4MB, at most 10 per
-reply. Teams exposes no message history to bots, so Claude only sees messages as they
+
+Outbound, Teams has no single "send a file" call, so each file takes one of three
+routes. Claude just passes paths to `reply`; the routing is automatic.
+
+| File | In a DM | In a channel or group chat |
+|---|---|---|
+| Image under 4MB | inline, renders in the message | inline, renders in the message |
+| Anything else (and larger images) | consent card the recipient must Accept | uploaded to SharePoint, posted as a file card |
+
+Limits: 100MB per file, 10 files and 200MB per reply.
+
+**Consent cards are asynchronous.** In a DM the bot cannot push a file at someone: it
+offers one, and the bytes move only when the recipient clicks Accept. The tool result
+says `offered <name>`, and that is the end of it, no completion event follows. The
+channel server must be running when they click, because it is what performs the
+upload. Unaccepted offers expire after an hour.
+
+**Channels and group chats need a SharePoint site** (`MSTEAMS_SHAREPOINT_SITE_ID`, see
+[SETUP.md](SETUP.md#file-sending-to-channels-and-group-chats)). Without it, text,
+inline images and DM file sends all keep working, and only those sends fail, with an
+explanation. Channel files get an organization-wide link; group-chat files get a link
+restricted to the people in that chat, and the send fails rather than widening the
+link if that membership cannot be read.
+
+Teams exposes no message history to bots, so Claude only sees messages as they
 arrive; paste or summarize earlier context.
 
 ## How it works
@@ -201,6 +229,13 @@ listener. Running a second project needs its own bot registration end to end; se
   that is still allowed; revocation stops both directions immediately.
 - Permission requests go only to allowlisted DMs and use one-shot verdicts. The relay
   needs `--permission-mode default`; auto mode never asks.
+- Outbound files add one egress path: uploads go only to Microsoft hosts (allowlisted,
+  HTTPS, refusing redirects, and rejecting any host that resolves to a private address)
+  or to the SharePoint site you configured. The upload URL Teams hands back is treated
+  as a credential: held in memory, never logged, never written to disk.
+- Files the channel itself stores (credentials, conversation references, pending
+  snapshots) can never be sent back out; the inbox is the one exception, since that is
+  where inbound downloads land.
 
 ## Troubleshooting
 

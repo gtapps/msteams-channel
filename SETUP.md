@@ -300,6 +300,133 @@ confirmation dialog never appears. Confirmed against Anthropic's own `fakechat`
 server, so it is not specific to this plugin. Use the managed-settings route
 above.
 
+## Adding the bot to a team or group chat
+
+A DM needs none of this. The bot is reachable at
+`https://teams.microsoft.com/l/chat/0/0?users=28:<app-id>` as soon as Step 5
+finishes, with no app package anywhere. Being added to a team or a group chat is
+different: that installs an app, and an app needs a package.
+
+```bash
+./teams-app/build.sh          # -> teams-app/dist/msteams-channel.zip
+```
+
+The script reads the bot id from the state dir `.env`, so it never has to be
+pasted into a file and is never printed. Upload the zip in Teams under **Apps →
+Manage your apps → Upload an app → Upload a custom app**, which is what Step 0's
+custom-app setting enables, then open the app and use **Add to a team** or **Add
+to a chat**.
+
+Edit `teams-app/manifest.json` first if you want a different display name; the
+`id` and `botId` placeholders are filled in by the build.
+
+Conversations are still opt-in after that: see [ACCESS.md](ACCESS.md) for
+`group add` and for how to find a group chat's id, which Teams does not expose
+in its UI.
+
+## File sending to channels and group chats
+
+Optional, and only for files. Text, inline images (under 4MB) and DM file sends
+work with nothing here.
+
+**DM file sends need nothing beyond Steps 4 and 5.**
+
+Verified against a live tenant on 2026-08-12: a bot registered through Azure Bot
+Service with its Teams channel enabled, reached over its deep link
+(`https://teams.microsoft.com/l/chat/0/0?users=28:<app-id>`) and with no app
+package installed anywhere, posts a FileConsentCard that renders with working
+Accept and Decline actions.
+
+This is worth stating because Microsoft's own bot file documentation presents
+`supportsFiles: true` in an app manifest as the switch for a bot sending files
+in a personal chat. That requirement does not apply on this path, which has no
+manifest to set it in. If you later install an app package for this bot and DM
+file offers start rendering without buttons, that property in its manifest is
+the first thing to check.
+
+Channel and group chat file sends are a different route entirely: they upload
+through Graph to the SharePoint site configured below, so they need that site
+and its grant, plus the bot actually being in the team or chat (see
+[Adding the bot to a team or group chat](#adding-the-bot-to-a-team-or-group-chat)).
+
+Outside a DM a bot has no personal drive to upload to (Graph's `/me` needs a
+signed-in user, and this channel authenticates as the application), so files
+there are uploaded to a SharePoint site you designate and shared from it.
+
+1. **Pick or create a site** to hold them. A dedicated one is easiest to reason
+   about: everything the bot sends lands in an `AgentShared` folder in its
+   default document library, and never overwrites (each upload gets a random
+   suffix).
+
+2. **Get the site id**, in [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer)
+   signed in as yourself. The app cannot read the site until step 3 grants it
+   access, so app-only credentials cannot be used here:
+
+   ```
+   GET https://graph.microsoft.com/v1.0/sites?search=*
+   ```
+
+   Or address one directly with
+   `/sites/contoso.sharepoint.com:/sites/BotFiles?$select=id`. Either way the id
+   is the triple `contoso.sharepoint.com,<guid>,<guid>`, and all three parts
+   matter.
+
+3. **Grant the app write access to that one site.** Two halves. In Entra ID, on
+   the app registration, add the application permission `Sites.Selected` and
+   grant admin consent. Then bind it to the site, again in Graph Explorer:
+
+   ```
+   POST https://graph.microsoft.com/v1.0/sites/<site-id>/permissions
+
+   {"roles":["write"],"grantedToIdentities":[{"application":{"id":"<MSTEAMS_APP_ID>","displayName":"Claude Teams channel"}}]}
+   ```
+
+   Graph Explorer will ask you to consent to `Sites.FullControl.All` for itself
+   to make that call. A `201` with a permission id is success.
+
+   `Sites.Selected` is preferred because it bounds the damage: a leaked bot
+   credential can write to that one site rather than every site in the tenant.
+   `Sites.ReadWrite.All` (application) also works and needs no per-site call, at
+   that cost.
+
+   Verified on 2026-08-12 that `Sites.Selected` alone is enough for everything
+   this channel does: upload, item lookup, an organization link, a per-user
+   link, and delete. Microsoft's per-endpoint permission tables list
+   `Files.ReadWrite.All` and `Sites.ReadWrite.All` for `createLink` and do not
+   mention `Sites.Selected`, so this is worth knowing before anyone widens the
+   grant on the strength of those tables.
+
+   Two things that will otherwise cost you time. The grant in Entra opens
+   nothing on its own: until the `POST .../permissions` call runs, every upload
+   is a 403. And that call needs `Sites.FullControl.All`, which the Azure CLI
+   does not carry, so `az rest` answers `accessDenied` no matter how
+   administrative your account is. Run it from Graph Explorer, which prompts you
+   to consent for itself. If your tenant has security defaults enabled, the CLI
+   cannot mint a Graph token at all (`AADSTS530035`) and Graph Explorer is the
+   only practical route.
+
+4. **Point the channel at it,** in the state dir `.env` (`0600`, same file as
+   the credentials):
+
+   ```bash
+   MSTEAMS_SHAREPOINT_SITE_ID=contoso.sharepoint.com,<guid>,<guid>
+   ```
+
+Restart the session to pick it up, then check the whole chain before involving
+Teams:
+
+```bash
+bun probe-files.ts --site "<site-id>" [--recipient <your-aad-object-id>]
+```
+
+It runs the same calls the channel does, in the same order, and cleans up after
+itself: upload, the no-overwrite check, the item lookup, both link types, and
+the delete. `--ls` lists what the channel has uploaded so far.
+
+Group-chat sends additionally read the chat's member list through Bot Framework
+(no extra Graph permission) so the sharing link covers only those people; if
+that read fails, the send fails rather than sharing more widely.
+
 ## If setup fails
 
 Messages that never register or fail the access policy are silent in Teams.

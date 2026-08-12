@@ -13,7 +13,7 @@ Bun must be on `PATH`. Install from [bun.sh](https://bun.sh).
 
 ```bash
 bun install          # full install, including devDependencies
-bun test             # 256 tests, ~11s; no tenant, no network
+bun test             # 394 tests, ~14s; no tenant, no network
 bun run typecheck    # tsc --noEmit; must pass before committing
 ```
 
