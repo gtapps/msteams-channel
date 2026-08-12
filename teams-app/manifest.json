@@ -1,0 +1,35 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "__BOT_ID__",
+  "developer": {
+    "name": "gtapps",
+    "websiteUrl": "https://github.com/gtapps/msteams-channel",
+    "privacyUrl": "https://github.com/gtapps/msteams-channel/blob/main/SECURITY.md",
+    "termsOfUseUrl": "https://github.com/gtapps/msteams-channel/blob/main/LICENSE"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "Hermit",
+    "full": "Hermit, a Claude Code channel"
+  },
+  "description": {
+    "short": "Talk to a Claude Code session from Teams.",
+    "full": "Bridges a Microsoft Teams conversation to a Claude Code session running on your own machine. Messages you send reach the session; its replies, files and permission prompts come back here. Access is controlled from the terminal, not from chat."
+  },
+  "accentColor": "#4F46E5",
+  "bots": [
+    {
+      "botId": "__BOT_ID__",
+      "scopes": ["personal", "team", "groupChat"],
+      "isNotificationOnly": false,
+      "supportsFiles": true
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": []
+}
