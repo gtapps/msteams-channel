@@ -3,6 +3,7 @@
 [![CI](https://github.com/gtapps/msteams-channel/actions/workflows/ci.yml/badge.svg)](https://github.com/gtapps/msteams-channel/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/github/v/release/gtapps/msteams-channel?sort=semver)](https://github.com/gtapps/msteams-channel/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/gtapps/msteams-channel/_gh_traffic_stats/.github/badges/clones.json)
 
 A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)** that
 connects a Microsoft Teams bot to your Claude Code session.
