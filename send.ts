@@ -15,6 +15,7 @@
  *
  * Usage:
  *   bun send.ts --conversation <id> --text <message> [--thread <thread_id>]
+ *   bun send.ts --conversation <id> --files <path> [--files <path> ...]
  *   bun send.ts --list
  *
  * Text may also arrive on stdin, which is what a caller with a long,
@@ -22,18 +23,26 @@
  * /proc, so `--text` puts the message body where any local user can read it:
  *   echo "..." | bun send.ts --conversation <id>
  *
+ * A file sent to a DM is *offered*: the recipient sees a consent card and the
+ * bytes only move once they Accept, which the long-running channel server
+ * handles. This command exits as soon as the card is posted, so the server has
+ * to be running for the transfer to complete.
+ *
  * Exit codes: 0 sent · 1 bad usage · 2 not configured · 3 refused by the
  * outbound gate · 4 send failed.
  */
 
 import { App } from '@microsoft/teams.apps'
+import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { ConversationStore } from './src/conversations.js'
-import { chunkText } from './src/chunk.js'
 import { loadEnvFile } from './src/env.js'
 import { outboundAllowed } from './src/gate.js'
 import { readAccess } from './src/access.js'
 import { stateDir } from './src/state.js'
+import { PendingUploadStore } from './src/pending-uploads.js'
+import { planOutboundFiles, deliverOutbound } from './src/outbound.js'
+import { graphTokenGetter } from './src/sharepoint.js'
 
 const STATE_DIR = stateDir()
 
@@ -59,6 +68,18 @@ function idFlag(name: string): string | undefined {
   const value = flag(name)
   if (value?.startsWith('--')) die(1, `--${name} needs a value`)
   return value
+}
+
+/** A flag that may appear more than once, each time with a path. */
+function pathFlags(name: string): string[] {
+  const out: string[] = []
+  process.argv.forEach((arg, i) => {
+    if (arg !== `--${name}`) return
+    const value = process.argv[i + 1]
+    if (!value || value.startsWith('--')) die(1, `--${name} needs a value`)
+    out.push(value)
+  })
+  return out
 }
 
 // Credentials come from the state dir only — argv is world-readable in /proc.
@@ -89,15 +110,19 @@ if (process.argv.includes('--list')) {
 
 const conversationId = idFlag('conversation')
 if (!conversationId) {
-  die(1, 'usage: bun send.ts --conversation <id> --text <message> [--thread <thread_id>]\n       bun send.ts --list')
+  die(1, 'usage: bun send.ts --conversation <id> [--text <message>] [--files <path>] [--thread <thread_id>]\n       bun send.ts --list')
 }
 
+const files = pathFlags('files')
 const text = flag('text') ?? (!process.stdin.isTTY ? await Bun.stdin.text() : '')
-if (!text.trim()) die(1, 'nothing to send: pass --text or pipe the message on stdin')
+if (!text.trim() && files.length === 0) {
+  die(1, 'nothing to send: pass --text, pipe the message on stdin, or pass --files')
+}
 
 const APP_ID = process.env.MSTEAMS_APP_ID
 const APP_PASSWORD = process.env.MSTEAMS_APP_PASSWORD
 const TENANT_ID = process.env.MSTEAMS_TENANT_ID
+const SHAREPOINT_SITE_ID = process.env.MSTEAMS_SHAREPOINT_SITE_ID
 if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
   die(2, `msteams is not configured — set credentials in ${join(STATE_DIR, '.env')} (run /msteams:configure)`)
 }
@@ -116,27 +141,66 @@ if (!outbound.allowed) {
   die(3, `refused: that conversation is no longer allowed (${outbound.reason}) — manage access with /msteams:access`)
 }
 
+// How each file travels depends on where it is going, so this needs the
+// reference. Nothing has been sent yet, so any refusal here is total.
+const plan = (() => {
+  try {
+    return planOutboundFiles(files, {
+      conversationType: ref.conversationType,
+      stateDir: STATE_DIR,
+      sharePointSiteId: SHAREPOINT_SITE_ID,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // A missing SharePoint site is a configuration gap, not a bad command.
+    die((err as { code?: string })?.code === 'sharepoint_unconfigured' ? 2 : 1, message)
+  }
+})()
+
 const app = new App({ clientId: APP_ID, clientSecret: APP_PASSWORD, tenantId: TENANT_ID })
 const threadId = idFlag('thread')
 
-// Declared outside the try so a failure can report what already landed. Which
-// parts got through matters: the recipient has seen them, so re-running the
-// same command would repeat text rather than resume it. The reply tool reports
-// the same way.
-const chunks = chunkText(text)
-const ids: string[] = []
+// Shared with the running server, which is what receives the Accept and
+// performs the upload after this process has exited.
+const pendingDir = join(STATE_DIR, 'pending-uploads')
+mkdirSync(pendingDir, { recursive: true, mode: 0o700 })
 
-try {
-  for (const chunk of chunks) {
-    const activity = { type: 'message', text: chunk, textFormat: 'markdown' } as any
-    const sent = threadId
-      ? await app.reply(ref.conversationId, threadId, activity)
-      : await app.send(ref.conversationId, activity)
-    if (sent?.id) ids.push(String(sent.id))
-  }
-  process.stdout.write(`${ids.join(' ')}\n`)
-  process.exit(0)
-} catch (err) {
-  const detail = err instanceof Error ? err.message : String(err)
-  die(4, `send failed after ${ids.length} of ${chunks.length} part(s) sent: ${detail}`)
+const result = await deliverOutbound({
+  text,
+  plan,
+  conversationId: ref.conversationId,
+  post: activity =>
+    threadId
+      ? app.reply(ref.conversationId, threadId, activity as any)
+      : app.send(ref.conversationId, activity as any),
+  pending: new PendingUploadStore(pendingDir),
+  sharepoint: SHAREPOINT_SITE_ID
+    ? {
+        siteId: SHAREPOINT_SITE_ID,
+        conversationType: ref.conversationType,
+        getToken: graphTokenGetter(app.graph),
+        listMemberIds: async id =>
+          (await app.api.conversations.getMembers(id))
+            .map(member => member.aadObjectId ?? '')
+            .filter(Boolean),
+      }
+    : undefined,
+  log: line => process.stderr.write(`${line}\n`),
+})
+
+if (result.failed) {
+  // Which parts landed matters: the recipient has seen them, so re-running the
+  // same command would repeat text rather than resume it.
+  die(
+    4,
+    `send failed after ${result.failed.after} of ${result.failed.of} part(s) sent: ${result.failed.detail}`,
+  )
 }
+
+if (result.sentIds.length) process.stdout.write(`${result.sentIds.join(' ')}\n`)
+if (result.offered.length) {
+  process.stdout.write(
+    `offered ${result.offered.join(', ')} — awaiting Accept in Teams (the channel server must be running to complete the transfer)\n`,
+  )
+}
+process.exit(0)

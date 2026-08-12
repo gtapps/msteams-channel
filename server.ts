@@ -40,24 +40,27 @@ import {
 } from './src/access.js'
 import { parseVerdict, PendingPermissions } from './src/permissions.js'
 import { normalize } from './src/normalize.js'
-import { chunkText } from './src/chunk.js'
-import { buildImageAttachment, MAX_ATTACHMENTS, type Attachment } from './src/attach.js'
 import { AttachmentHandles } from './src/attachments.js'
 import { loadEnvFile } from './src/env.js'
 import { react, GRAPH_REACTIONS } from './src/graph.js'
 import { stateDir } from './src/state.js'
+import { PendingUploadStore } from './src/pending-uploads.js'
+import { handleFileConsentInvoke, uploadToConsentUrl } from './src/file-consent.js'
+import { planOutboundFiles, deliverOutbound, describeDelivery } from './src/outbound.js'
+import { graphTokenGetter } from './src/sharepoint.js'
 
 const STATE_DIR = stateDir()
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const QUEUE_DIR = join(STATE_DIR, 'queue')
 const CONVERSATIONS_DIR = join(STATE_DIR, 'conversations')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
+const PENDING_DIR = join(STATE_DIR, 'pending-uploads')
 const ENV_FILE = join(STATE_DIR, '.env')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
 // 0700 throughout: the state dir holds Entra credentials and conversation
 // references, both of which grant the ability to post as the bot.
-for (const dir of [STATE_DIR, INBOX_DIR, QUEUE_DIR, CONVERSATIONS_DIR, APPROVED_DIR]) {
+for (const dir of [STATE_DIR, INBOX_DIR, QUEUE_DIR, CONVERSATIONS_DIR, APPROVED_DIR, PENDING_DIR]) {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
 }
 
@@ -74,6 +77,9 @@ const WEBHOOK_PATH = (process.env.MSTEAMS_WEBHOOK_PATH ?? '/api/messages') as `/
 // container, loopback is the *container's* — a host-side proxy cannot reach it,
 // so a containerized deploy must set this (0.0.0.0) and publish the port.
 const WEBHOOK_HOST = process.env.MSTEAMS_WEBHOOK_HOST ?? '127.0.0.1'
+// Optional: without it, files still reach DMs (consent flow) and images still
+// go inline anywhere. Only channel and group-chat file sends need a site.
+const SHAREPOINT_SITE_ID = process.env.MSTEAMS_SHAREPOINT_SITE_ID
 
 // A stale process from a crashed session still holds the webhook port, so the
 // next session's listener would fail to bind. Evict it before we start.
@@ -224,10 +230,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'array',
             items: { type: 'string' },
             description:
-              'Absolute paths to images to attach (png, jpg, gif, webp, bmp; under 4MB each, up to 10 per reply), sent after the text. Teams only accepts images this way — attaching any other file type, a larger image, or too many, fails with an explanation, so paste other content into the message instead.',
+              'Absolute paths of files to attach, sent after the text (up to 10 per reply, 100MB each). Images under 4MB go inline. In a DM, anything else is offered as a consent card the recipient must Accept — the result reports it as offered, which is terminal: no event follows, so do not wait or retry. In channels and group chats those files are shared from SharePoint instead.',
           },
         },
-        required: ['conversation_id', 'text'],
+        required: ['conversation_id'],
       },
     },
     {
@@ -361,20 +367,19 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   // Named reply_to for parity with the telegram and discord plugins, but it
   // carries the inbound tag's thread_id — see the tool description.
   const threadId = args.reply_to ? String(args.reply_to) : undefined
-  if (!text) return fail('text is required')
-
-  // Build every attachment BEFORE sending anything. A file that fails
-  // validation halfway through would otherwise leave the text already
-  // delivered and the sender waiting on an image that never arrives.
   const files = Array.isArray(args.files) ? args.files.map(String) : []
-  if (files.length > MAX_ATTACHMENTS) {
-    return fail(
-      `refused: ${files.length} files exceeds the ${MAX_ATTACHMENTS}-attachment limit per reply — split into separate messages`,
-    )
-  }
-  let attachments: Attachment[]
+  if (!text.trim() && files.length === 0) return fail('pass text, files, or both')
+
+  // Route and read every file BEFORE sending anything. A file that fails
+  // validation halfway through would otherwise leave the text already
+  // delivered and the sender waiting on something that never arrives.
+  let plan
   try {
-    attachments = files.map(f => buildImageAttachment(f, STATE_DIR))
+    plan = planOutboundFiles(files, {
+      conversationType: ref.conversationType,
+      stateDir: STATE_DIR,
+      sharePointSiteId: SHAREPOINT_SITE_ID,
+    })
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err))
   }
@@ -382,46 +387,42 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   // Captured because narrowing from the `!teamsApp` guard above does not reach
   // into a closure — teamsApp is a mutable module-level binding.
   const app = teamsApp
-  const postActivity = (activity: any) =>
-    threadId ? app.reply(ref.conversationId, threadId, activity) : app.send(ref.conversationId, activity)
+  const result = await deliverOutbound({
+    text,
+    textFormat,
+    plan,
+    conversationId: ref.conversationId,
+    post: activity =>
+      threadId
+        ? app.reply(ref.conversationId, threadId, activity as any)
+        : app.send(ref.conversationId, activity as any),
+    pending: pendingUploads,
+    sharepoint: SHAREPOINT_SITE_ID
+      ? {
+          siteId: SHAREPOINT_SITE_ID,
+          conversationType: ref.conversationType,
+          getToken: graphTokenGetter(app.graph),
+          // Bot Framework, not Graph: the bot can already read the membership
+          // of a conversation it is in, so a per-user sharing link costs no
+          // extra tenant permission. Graph's /chats/{id}/members (which needs
+          // ChatMember.Read.All) is the fallback if this ever stops working.
+          listMemberIds: async conversationId =>
+            (await app.api.conversations.getMembers(conversationId))
+              .map(member => member.aadObjectId ?? '')
+              .filter(Boolean),
+        }
+      : undefined,
+    log: line => process.stderr.write(`msteams channel: ${line}\n`),
+  })
 
-  const chunks = chunkText(text)
-  const sentIds: string[] = []
-  try {
-    for (const chunk of chunks) {
-      const sent = await postActivity({ type: 'message', text: chunk, textFormat })
-      if (sent?.id) sentIds.push(String(sent.id))
-    }
-
-    // Attachments follow the text as their own activities, matching the
-    // telegram plugin — Teams renders an image with a caption inconsistently.
-    for (const attachment of attachments) {
-      const sent = await postActivity({ type: 'message', attachments: [attachment] })
-      if (sent?.id) sentIds.push(String(sent.id))
-    }
-  } catch (err) {
-    process.stderr.write(`msteams channel: reply failed: ${err}\n`)
-    const detail = err instanceof Error ? err.message : String(err)
+  if (result.failed) {
     // Which parts landed matters: the sender has already seen them, so a
     // blind retry would repeat text rather than resume it.
     return fail(
-      `send failed after ${sentIds.length} of ${chunks.length + attachments.length} part(s) sent: ${detail}`,
+      `send failed after ${result.failed.after} of ${result.failed.of} part(s) sent: ${result.failed.detail}`,
     )
   }
-
-  const ids = sentIds.join(', ')
-  const parts = chunks.length + attachments.length
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text:
-          parts === 1
-            ? `sent (id: ${ids || 'unknown'})`
-            : `sent ${parts} parts (ids: ${ids || 'unknown'})`,
-      },
-    ],
-  }
+  return ok(describeDelivery(result))
 })
 
 await mcp.connect(new StdioServerTransport())
@@ -434,6 +435,10 @@ const queue = new IngressQueue(QUEUE_DIR)
 const conversations = new ConversationStore(CONVERSATIONS_DIR)
 // In-memory only: these hold download URLs carrying live OneDrive tokens.
 const attachmentHandles = new AttachmentHandles()
+// Outbound files offered by consent card, waiting for someone to click Accept.
+const pendingUploads = new PendingUploadStore(PENDING_DIR)
+// Upload ids this process has handled, so a redelivered invoke stays silent.
+const settledConsentInvokes = new Map<string, number>()
 
 // Static mode snapshots access at boot and never writes. Intended for a
 // containerized deploy where the state dir is read-only or baked into the
@@ -668,6 +673,36 @@ if (!APP_ID || !APP_PASSWORD || !TENANT_ID) {
       .catch(err => process.stderr.write(`msteams channel: dispatch failed: ${err}\n`))
       .finally(() => queue.finish(String(activity.id)))
   })
+
+  // Someone answered a consent card. Deliberately NOT through the ingress
+  // queue: the queue persists raw activities verbatim, and this one carries
+  // `uploadInfo.uploadUrl` — a live pre-authorized upload credential, the same
+  // class of secret as an inbound tempauth download URL. Deduplication instead
+  // comes from the pending store's atomic claim.
+  //
+  // Returning undefined synchronously is what acks the invoke: the SDK writes
+  // the HTTP InvokeResponse from this callback's return value, so the upload
+  // runs detached, exactly like dispatch() above and for the same reason.
+  const onConsentInvoke = (ctx: any): void => {
+    void handleFileConsentInvoke(ctx.activity, {
+      access: loadAccess(),
+      configuredTenantId: TENANT_ID,
+      store: pendingUploads,
+      upload: uploadToConsentUrl,
+      // ctx.send is bound to the conversation the invoke came from.
+      send: activity => ctx.send(activity),
+      update: (activityId, activity) =>
+        app.api.conversations.updateActivity(
+          String(ctx.activity.conversation?.id ?? ''),
+          activityId,
+          activity as any,
+        ),
+      settled: settledConsentInvokes,
+      log: line => process.stderr.write(`msteams channel: ${line}\n`),
+    }).catch(err => process.stderr.write(`msteams channel: consent invoke failed: ${err}\n`))
+  }
+  app.on('file.consent.accept', onConsentInvoke)
+  app.on('file.consent.decline', onConsentInvoke)
 
   await app.start(WEBHOOK_PORT)
 

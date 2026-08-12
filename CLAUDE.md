@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Runtime is **Bun** (no Node, no bundler, no build step — TypeScript runs directly).
 
 ```bash
-bun test                          # whole suite (256 tests, ~8s, no tenant/network)
+bun test                          # whole suite (394 tests, ~14s, no tenant/network)
 bun test tests/gate.test.ts       # one file
 bun test -t "outbound"            # one test by name
 bun run typecheck                 # tsc --noEmit; must pass before committing
@@ -58,6 +58,22 @@ anti-exfiltration property) **and** `outboundAllowed()` must pass against the *c
 tool that skips either half. `download_attachment` is exempt by design: it addresses a file
 handle, not a conversation.
 
+Files take one of three routes, chosen per file by `src/outbound.ts` (`planOutboundFiles`) and
+delivered by the one engine both `reply` and `send.ts` call (`deliverOutbound`):
+
+| | personal chat | channel / group chat |
+|---|---|---|
+| image < 4MB | inline data URI | inline data URI |
+| anything else | FileConsentCard (`src/file-consent.ts`) | SharePoint upload (`src/sharepoint.ts`) |
+
+The consent route is asynchronous and crosses processes: the card is posted, the bytes are
+snapshotted into `pending-uploads/`, and the recipient's Accept arrives later as a
+`fileConsent/invoke` at the **listener** (not necessarily the process that offered the file,
+which is why the store is on disk). That invoke passes the same inbound gate as a message,
+and `PendingUploadStore.claim` is an atomic rename so a redelivered Accept cannot upload
+twice. Group-chat sharing links use a Graph **beta** endpoint: `GROUP_CHAT_FILES_ENABLED` in
+`src/outbound.ts` is the switch if that ever stops being acceptable.
+
 ### State dir
 
 `src/state.ts` owns the single rule — `MSTEAMS_STATE_DIR ?? ~/.claude/channels/msteams`, user
@@ -67,7 +83,8 @@ project-relative: `.mcp.json` runs the server with `--cwd ${CLAUDE_PLUGIN_ROOT}`
 the plugin dir while a skill's is the project.
 
 All dirs 0700 / files 0600: `.env` (credentials, read once at boot), `access.json` (re-read on
-**every** inbound message), `conversations/`, `queue/`, `inbox/`, `approved/`, `bot.pid`.
+**every** inbound message), `conversations/`, `queue/`, `inbox/`, `approved/`,
+`pending-uploads/` (snapshots of files offered by consent card, TTL 1h), `bot.pid`.
 
 The `/msteams:access` skill (a separate process) mutates `access.json` and drops
 `approved/<senderId>`; the server polls for it every 5s. That dropfile is the whole IPC.
@@ -78,6 +95,11 @@ The `/msteams:access` skill (a separate process) mutates `access.json` and drops
 - **Inbound attachment `downloadUrl`s are credentials** (live OneDrive `tempauth=` tokens).
   They stay in memory in `src/attachments.ts`, keyed by opaque handle; never log them, never
   put them in an error message, never persist them.
+- **A consent invoke's `uploadInfo.uploadUrl` is the same class of credential.** It is a
+  pre-authorized upload session. `fileConsent/invoke` therefore never enters the ingress queue
+  (which persists raw activities verbatim), is never logged, and never reaches Claude. `fetch`
+  puts the request URL in its own error text, so `uploadToConsentUrl` rethrows sanitized.
+  `pending-uploads/` holds only our own outbound bytes, never anything from an invoke.
 - **Thread on `extractThreadId()`'s value, never `activity.id`.** Teams does not set
   `replyToId` on channel posts; thread identity lives in the `;messageid=` suffix of
   `conversation.id`. Replying to a message's own id opens a *new* thread. See
@@ -120,8 +142,8 @@ The `/msteams:access` skill (a separate process) mutates `access.json` and drops
   permission and this channel has client-credentials auth. The tool exists and degrades with
   an explanation. Public summary: `docs/REACTIONS.md`; the derivation that makes re-deriving
   it pointless (412 trace, the two ruled-out hypotheses) is the private reactions topic.
-- **Only images can be attached outbound** (inline data URI, <4MB, ≤10 per reply). Other file
-  types need the FileConsentCard / SharePoint routes, which are not implemented.
+- **Reactions** are the only outbound capability Teams withholds. Files are not: see the
+  outbound file routes above.
 - **No history**: Teams exposes none to this plugin.
 - `skipLibCheck` is on because the SDK ships express typings we deliberately don't install.
 

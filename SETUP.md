@@ -300,6 +300,60 @@ confirmation dialog never appears. Confirmed against Anthropic's own `fakechat`
 server, so it is not specific to this plugin. Use the managed-settings route
 above.
 
+## File sending to channels and group chats
+
+Optional, and only for files. Text, inline images (under 4MB) and DM file sends
+work with nothing here.
+
+**Prerequisite for DM file sends: the Teams app manifest must set
+`supportsFiles: true`.** Without it Teams renders the consent card without an
+Accept button, and nothing you change on the server side will help. Check the
+manifest you uploaded in Step 5, add the property, and re-upload if missing.
+
+Outside a DM a bot has no personal drive to upload to (Graph's `/me` needs a
+signed-in user, and this channel authenticates as the application), so files
+there are uploaded to a SharePoint site you designate and shared from it.
+
+1. **Pick or create a site** to hold them. A dedicated one is easiest to reason
+   about: everything the bot sends lands in an `AgentShared` folder in its
+   default document library, and never overwrites (each upload gets a random
+   suffix).
+
+2. **Get the site id:**
+
+   ```bash
+   curl -H "Authorization: Bearer $TOKEN" \
+     "https://graph.microsoft.com/v1.0/sites/contoso.sharepoint.com:/sites/BotFiles?\$select=id"
+   # -> "id": "contoso.sharepoint.com,<guid>,<guid>"
+   ```
+
+3. **Grant the app write access to that one site.** In Entra ID, add the
+   application permission `Sites.Selected` and grant admin consent, then bind it
+   to the site (this call needs an admin token with `Sites.FullControl.All`):
+
+   ```bash
+   curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+     "https://graph.microsoft.com/v1.0/sites/<site-id>/permissions" \
+     -d '{"roles":["write"],"grantedToIdentities":[{"application":{"id":"<MSTEAMS_APP_ID>","displayName":"Claude Teams channel"}}]}'
+   ```
+
+   `Sites.Selected` is preferred because it bounds the damage: a leaked bot
+   credential can write to that one site rather than every site in the tenant.
+   `Sites.ReadWrite.All` (application) also works and needs no per-site call, at
+   that cost.
+
+4. **Point the channel at it,** in the state dir `.env` (`0600`, same file as
+   the credentials):
+
+   ```bash
+   MSTEAMS_SHAREPOINT_SITE_ID=contoso.sharepoint.com,<guid>,<guid>
+   ```
+
+Restart the session to pick it up. Group-chat sends additionally read the chat's
+member list through Bot Framework (no extra Graph permission) so the sharing
+link covers only those people; if that read fails, the send fails rather than
+sharing more widely.
+
 ## If setup fails
 
 Messages that never register or fail the access policy are silent in Teams.

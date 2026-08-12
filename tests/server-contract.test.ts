@@ -126,6 +126,21 @@ describe('tool surface', () => {
     expect(reply.inputSchema.properties.reply_to.description).toContain('thread_id')
     expect(reply.inputSchema.properties.reply_to.description).toMatch(/not pass message_id/i)
   })
+
+  test('reply accepts a file with no text', () => {
+    // Sending a document with nothing to say about it is a normal request;
+    // requiring text would make the caller invent some.
+    const reply = tools.find(t => t.name === 'reply')
+    expect(reply.inputSchema.required).toEqual(['conversation_id'])
+  })
+
+  test('reply says that an offered file is the end of the story', () => {
+    // The consent round trip resolves in Teams and never comes back as an
+    // event, so a model that waits for one waits forever.
+    const files = tools.find(t => t.name === 'reply').inputSchema.properties.files
+    expect(files.description).toMatch(/Accept/)
+    expect(files.description).toMatch(/do not wait/i)
+  })
 })
 
 describe('channels wire protocol', () => {

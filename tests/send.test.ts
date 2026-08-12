@@ -288,3 +288,67 @@ describe('state-dir contract', () => {
     expect(stderr).toContain('not configured')
   })
 })
+
+describe('--files', () => {
+  // Files live outside the state dir, which is never sendable.
+  let filesDir: string
+  let pdf: string
+
+  beforeEach(() => {
+    filesDir = mkdtempSync(join(tmpdir(), 'msteams-send-files-'))
+    pdf = join(filesDir, 'report.pdf')
+    writeFileSync(pdf, '%PDF-1.7')
+  })
+
+  test('a swallowed path is a usage error', async () => {
+    const { code, stderr } = await run('--conversation', DM_ID, '--files', '--text')
+    expect(code).toBe(1)
+    expect(stderr).toContain('--files needs a value')
+  })
+
+  test('a file with no text is a complete command', async () => {
+    // Gate-refused on purpose: reaching the gate proves the usage check
+    // accepted a file-only send, and costs no network to show it.
+    putRef({ conversationId: DM_ID, senderId: SENDER })
+    putAccess({ allowFrom: [] })
+    putCredentials()
+
+    const { code, stderr } = await run('--conversation', DM_ID, '--files', pdf)
+
+    expect(code).toBe(3)
+    expect(stderr).not.toContain('nothing to send')
+  })
+
+  test('the gate is checked before the files are even read', async () => {
+    putRef({ conversationId: DM_ID, senderId: SENDER })
+    putAccess({ allowFrom: [] })
+    putCredentials()
+
+    const { code, stderr } = await run('--conversation', DM_ID, '--files', join(filesDir, 'gone.pdf'))
+
+    expect(code).toBe(3)
+    expect(stderr).toContain('sender_not_allowed')
+  })
+
+  test('an unreadable file is a usage error', async () => {
+    putRef({ conversationId: DM_ID, senderId: SENDER })
+    putAccess({ allowFrom: [SENDER] })
+    putCredentials()
+
+    const { code } = await run('--conversation', DM_ID, '--files', join(filesDir, 'gone.pdf'))
+
+    expect(code).toBe(1)
+  })
+
+  test('a channel file with no SharePoint site is a configuration gap, not bad usage', async () => {
+    putRef({ conversationId: CHANNEL_ID, conversationType: 'channel' })
+    putAccess({ groups: { [CHANNEL_ID]: { requireMention: false, allowFrom: [] } } })
+    putCredentials()
+
+    const { code, stderr } = await run('--conversation', CHANNEL_ID, '--files', pdf)
+
+    expect(code).toBe(2)
+    expect(stderr).toContain('MSTEAMS_SHAREPOINT_SITE_ID')
+    expect(stderr).toContain('SETUP.md')
+  })
+})
