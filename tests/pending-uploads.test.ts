@@ -167,12 +167,26 @@ describe('prune', () => {
     expect(readdirSync(dir)).toContain(`${id}.json.claimed`)
   })
 
-  test('bytes with no metadata are collected', () => {
+  test('bytes with no metadata are collected once they are old enough', () => {
     writeFileSync(join(dir, `${'a'.repeat(32)}.bin`), 'orphaned')
 
     store.prune()
 
+    expect(readdirSync(dir)).toHaveLength(1)
+
+    store.prune(Date.now() + PENDING_UPLOAD_TTL_MS + 1)
+
     expect(readdirSync(dir)).toHaveLength(0)
+  })
+
+  test('bytes still waiting for their metadata are not robbed mid-write', () => {
+    // store() writes <id>.bin and then <id>.json. A prune from the other
+    // process landing in that window must not delete the snapshot.
+    writeFileSync(join(dir, `${'b'.repeat(32)}.bin`), 'mid-write')
+
+    store.prune()
+
+    expect(readdirSync(dir)).toContain(`${'b'.repeat(32)}.bin`)
   })
 
   test('a live record is untouched', () => {

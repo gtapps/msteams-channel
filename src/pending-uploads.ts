@@ -234,10 +234,15 @@ export class PendingUploadStore {
     for (const name of names) {
       const full = join(this.dir, name)
       // Bytes whose metadata is gone (crash between the two writes in store(),
-      // or a settle that died halfway) can never be claimed by anyone.
+      // or a settle that died halfway) can never be claimed by anyone. Age-
+      // checked for the same reason as the temp files below: store() writes the
+      // bytes before the metadata, so a prune running in the other process
+      // during that window would otherwise delete a snapshot whose consent card
+      // is about to be posted, and the recipient's Accept would report the
+      // offer as expired.
       if (name.endsWith('.bin') && !live.has(name.slice(0, -'.bin'.length))) {
         try {
-          rmSync(full)
+          if (now - statSync(full).mtimeMs > this.ttlMs) rmSync(full)
         } catch {}
         continue
       }

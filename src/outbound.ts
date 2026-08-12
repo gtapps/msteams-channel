@@ -299,10 +299,30 @@ export async function deliverOutbound(p: DeliverParams): Promise<DeliveryResult>
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     p.log?.(`outbound delivery failed: ${detail}`)
-    return { sentIds, offered, failed: { after: sentIds.length, of: parts, detail } }
+    // A posted consent card landed as much as a sent message did, so it counts
+    // toward what the recipient has already seen.
+    return { sentIds, offered, failed: { after: sentIds.length + offered.length, of: parts, detail } }
   }
 
   return { sentIds, offered }
+}
+
+/**
+ * The one-line failure both adapters report.
+ *
+ * Files already offered are named. Their consent cards are live in the chat,
+ * so a caller that reads only "send failed" and retries the whole reply offers
+ * them a second time — two cards for one file, and two snapshots held for an
+ * hour each.
+ */
+export function describeFailure(
+  failed: NonNullable<DeliveryResult['failed']>,
+  offered: string[],
+): string {
+  const base = `send failed after ${failed.after} of ${failed.of} part(s) sent: ${failed.detail}`
+  return offered.length
+    ? `${base} — already offered, do not send again: ${offered.join(', ')}`
+    : base
 }
 
 /**

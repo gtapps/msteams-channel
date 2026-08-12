@@ -6,6 +6,7 @@ import {
   planOutboundFiles,
   deliverOutbound,
   describeDelivery,
+  describeFailure,
   MAX_OUTBOUND_FILE_BYTES,
   type DeliverParams,
 } from '../src/outbound.js'
@@ -254,6 +255,30 @@ describe('deliverOutbound', () => {
 
     expect(result.failed?.detail).toMatch(/Teams rejected/)
     expect(readdirSync(pendingDir)).toHaveLength(0)
+  })
+
+  test('a failure names the offers already sitting in the chat', async () => {
+    const plan = planOutboundFiles([file('a.pdf', '%PDF'), file('b.pdf', '%PDF')], {
+      conversationType: 'personal',
+      stateDir,
+    })
+
+    const result = await deliverOutbound(
+      params({
+        plan,
+        post: async activity => {
+          posted.push(activity)
+          if (posted.length > 1) throw new Error('rate limited')
+          return { id: 'sent-1' }
+        },
+      }),
+    )
+
+    // The first card landed, so a caller that retries the whole reply would
+    // offer a.pdf twice.
+    expect(result.offered).toEqual(['a.pdf'])
+    expect(result.failed?.after).toBe(1)
+    expect(describeFailure(result.failed!, result.offered)).toMatch(/already offered.*a\.pdf/)
   })
 
   test('group-chat members are resolved once, before anything is uploaded', async () => {

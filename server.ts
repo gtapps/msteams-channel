@@ -46,7 +46,12 @@ import { react, GRAPH_REACTIONS } from './src/graph.js'
 import { stateDir } from './src/state.js'
 import { PendingUploadStore } from './src/pending-uploads.js'
 import { handleFileConsentInvoke, uploadToConsentUrl } from './src/file-consent.js'
-import { planOutboundFiles, deliverOutbound, describeDelivery } from './src/outbound.js'
+import {
+  planOutboundFiles,
+  deliverOutbound,
+  describeDelivery,
+  describeFailure,
+} from './src/outbound.js'
 import { graphTokenGetter } from './src/sharepoint.js'
 
 const STATE_DIR = stateDir()
@@ -418,9 +423,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   if (result.failed) {
     // Which parts landed matters: the sender has already seen them, so a
     // blind retry would repeat text rather than resume it.
-    return fail(
-      `send failed after ${result.failed.after} of ${result.failed.of} part(s) sent: ${result.failed.detail}`,
-    )
+    return fail(describeFailure(result.failed, result.offered))
   }
   return ok(describeDelivery(result))
 })

@@ -41,7 +41,7 @@ import { outboundAllowed } from './src/gate.js'
 import { readAccess } from './src/access.js'
 import { stateDir } from './src/state.js'
 import { PendingUploadStore } from './src/pending-uploads.js'
-import { planOutboundFiles, deliverOutbound } from './src/outbound.js'
+import { planOutboundFiles, deliverOutbound, describeFailure } from './src/outbound.js'
 import { graphTokenGetter } from './src/sharepoint.js'
 
 const STATE_DIR = stateDir()
@@ -191,10 +191,7 @@ const result = await deliverOutbound({
 if (result.failed) {
   // Which parts landed matters: the recipient has seen them, so re-running the
   // same command would repeat text rather than resume it.
-  die(
-    4,
-    `send failed after ${result.failed.after} of ${result.failed.of} part(s) sent: ${result.failed.detail}`,
-  )
+  die(4, describeFailure(result.failed, result.offered))
 }
 
 if (result.sentIds.length) process.stdout.write(`${result.sentIds.join(' ')}\n`)
