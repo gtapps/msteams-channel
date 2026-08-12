@@ -305,22 +305,24 @@ above.
 Optional, and only for files. Text, inline images (under 4MB) and DM file sends
 work with nothing here.
 
-**Prerequisite for DM file sends: an app package whose manifest sets
-`supportsFiles: true`.**
+**DM file sends need nothing beyond Steps 4 and 5.**
 
-Steps 4 and 5 register the bot in Azure and enable its Teams channel, which is
-enough to DM it through its deep link
-(`https://teams.microsoft.com/l/chat/0/0?users=28:<app-id>`). That path uploads
-no app package, so a tenant set up only that way has no manifest and nowhere to
-set this property. Microsoft documents `supportsFiles` as the switch for a bot
-sending files in a personal chat, so DM file sends need a package created and
-sideloaded (Teams client, Apps, Manage your apps, Upload an app). Not yet
-verified against this tenant: the symptom to watch for is a consent card that
-renders with no Accept button.
+Verified against a live tenant on 2026-08-12: a bot registered through Azure Bot
+Service with its Teams channel enabled, reached over its deep link
+(`https://teams.microsoft.com/l/chat/0/0?users=28:<app-id>`) and with no app
+package installed anywhere, posts a FileConsentCard that renders with working
+Accept and Decline actions.
 
-Channel and group chat file sends do not depend on this. They upload through
-Graph to the SharePoint site configured below, so they need only that site and
-its grant. Getting the bot into a team in the first place does require an
+This is worth stating because Microsoft's own bot file documentation presents
+`supportsFiles: true` in an app manifest as the switch for a bot sending files
+in a personal chat. That requirement does not apply on this path, which has no
+manifest to set it in. If you later install an app package for this bot and DM
+file offers start rendering without buttons, that property in its manifest is
+the first thing to check.
+
+Channel and group chat file sends are a different route entirely: they upload
+through Graph to the SharePoint site configured below, so they need that site
+and its grant. Getting the bot into a team in the first place does require an
 installed app package.
 
 Outside a DM a bot has no personal drive to upload to (Graph's `/me` needs a
