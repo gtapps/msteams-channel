@@ -357,6 +357,22 @@ there are uploaded to a SharePoint site you designate and shared from it.
    `Sites.ReadWrite.All` (application) also works and needs no per-site call, at
    that cost.
 
+   Verified on 2026-08-12 that `Sites.Selected` alone is enough for everything
+   this channel does: upload, item lookup, an organization link, a per-user
+   link, and delete. Microsoft's per-endpoint permission tables list
+   `Files.ReadWrite.All` and `Sites.ReadWrite.All` for `createLink` and do not
+   mention `Sites.Selected`, so this is worth knowing before anyone widens the
+   grant on the strength of those tables.
+
+   Two things that will otherwise cost you time. The grant in Entra opens
+   nothing on its own: until the `POST .../permissions` call runs, every upload
+   is a 403. And that call needs `Sites.FullControl.All`, which the Azure CLI
+   does not carry, so `az rest` answers `accessDenied` no matter how
+   administrative your account is. Run it from Graph Explorer, which prompts you
+   to consent for itself. If your tenant has security defaults enabled, the CLI
+   cannot mint a Graph token at all (`AADSTS530035`) and Graph Explorer is the
+   only practical route.
+
 4. **Point the channel at it,** in the state dir `.env` (`0600`, same file as
    the credentials):
 
