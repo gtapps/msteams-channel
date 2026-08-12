@@ -300,6 +300,30 @@ confirmation dialog never appears. Confirmed against Anthropic's own `fakechat`
 server, so it is not specific to this plugin. Use the managed-settings route
 above.
 
+## Adding the bot to a team or group chat
+
+A DM needs none of this. The bot is reachable at
+`https://teams.microsoft.com/l/chat/0/0?users=28:<app-id>` as soon as Step 5
+finishes, with no app package anywhere. Being added to a team or a group chat is
+different: that installs an app, and an app needs a package.
+
+```bash
+./teams-app/build.sh          # -> teams-app/dist/msteams-channel.zip
+```
+
+The script reads the bot id from the state dir `.env`, so it never has to be
+pasted into a file and is never printed. Upload the zip in Teams under **Apps →
+Manage your apps → Upload an app → Upload a custom app**, which is what Step 0's
+custom-app setting enables, then open the app and use **Add to a team** or **Add
+to a chat**.
+
+Edit `teams-app/manifest.json` first if you want a different display name; the
+`id` and `botId` placeholders are filled in by the build.
+
+Conversations are still opt-in after that: see [ACCESS.md](ACCESS.md) for
+`group add` and for how to find a group chat's id, which Teams does not expose
+in its UI.
+
 ## File sending to channels and group chats
 
 Optional, and only for files. Text, inline images (under 4MB) and DM file sends
@@ -322,8 +346,8 @@ the first thing to check.
 
 Channel and group chat file sends are a different route entirely: they upload
 through Graph to the SharePoint site configured below, so they need that site
-and its grant. Getting the bot into a team in the first place does require an
-installed app package.
+and its grant, plus the bot actually being in the team or chat (see
+[Adding the bot to a team or group chat](#adding-the-bot-to-a-team-or-group-chat)).
 
 Outside a DM a bot has no personal drive to upload to (Graph's `/me` needs a
 signed-in user, and this channel authenticates as the application), so files
@@ -334,23 +358,31 @@ there are uploaded to a SharePoint site you designate and shared from it.
    default document library, and never overwrites (each upload gets a random
    suffix).
 
-2. **Get the site id:**
+2. **Get the site id**, in [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer)
+   signed in as yourself. The app cannot read the site until step 3 grants it
+   access, so app-only credentials cannot be used here:
 
-   ```bash
-   curl -H "Authorization: Bearer $TOKEN" \
-     "https://graph.microsoft.com/v1.0/sites/contoso.sharepoint.com:/sites/BotFiles?\$select=id"
-   # -> "id": "contoso.sharepoint.com,<guid>,<guid>"
+   ```
+   GET https://graph.microsoft.com/v1.0/sites?search=*
    ```
 
-3. **Grant the app write access to that one site.** In Entra ID, add the
-   application permission `Sites.Selected` and grant admin consent, then bind it
-   to the site (this call needs an admin token with `Sites.FullControl.All`):
+   Or address one directly with
+   `/sites/contoso.sharepoint.com:/sites/BotFiles?$select=id`. Either way the id
+   is the triple `contoso.sharepoint.com,<guid>,<guid>`, and all three parts
+   matter.
 
-   ```bash
-   curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-     "https://graph.microsoft.com/v1.0/sites/<site-id>/permissions" \
-     -d '{"roles":["write"],"grantedToIdentities":[{"application":{"id":"<MSTEAMS_APP_ID>","displayName":"Claude Teams channel"}}]}'
+3. **Grant the app write access to that one site.** Two halves. In Entra ID, on
+   the app registration, add the application permission `Sites.Selected` and
+   grant admin consent. Then bind it to the site, again in Graph Explorer:
+
    ```
+   POST https://graph.microsoft.com/v1.0/sites/<site-id>/permissions
+
+   {"roles":["write"],"grantedToIdentities":[{"application":{"id":"<MSTEAMS_APP_ID>","displayName":"Claude Teams channel"}}]}
+   ```
+
+   Graph Explorer will ask you to consent to `Sites.FullControl.All` for itself
+   to make that call. A `201` with a permission id is success.
 
    `Sites.Selected` is preferred because it bounds the damage: a leaked bot
    credential can write to that one site rather than every site in the tenant.

@@ -126,9 +126,15 @@ Tappable Allow/Deny buttons are not built; use the text verdicts above.
 - **Reply somewhere it was not spoken to.** Every outbound tool requires a
   conversation reference, which exists only for conversations the inbound gate
   already accepted.
-- **Send you its own state.** The state dir holds credentials and conversation
-  references; sending a file from it is refused, symlinks included. Only
-  `inbox/` (files people sent *to* the bot) can go back out.
+- **Send you its own state.** The state dir holds credentials, conversation
+  references and snapshots of files offered to other people; sending a file from
+  it is refused, symlinks included. Only `inbox/` (files people sent *to* the
+  bot) can go back out.
+- **Finish a file offer for someone who has lost access.** A file offered in a
+  DM moves only when the recipient accepts it, and that acceptance passes the
+  same gate as a message. Revoke someone between the offer and their click and
+  the click is refused like anything else: silently, with the pending copy
+  discarded within the hour.
 - **Explain a refusal.** Refused senders get silence. Saying why would confirm
   the bot exists and leak the policy.
 

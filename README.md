@@ -118,6 +118,10 @@ display names never grant access). Default policy is `pairing`. Channels and gro
 chats are opt-in per conversation ID and mention-gated by default. Messages from other
 tenants are refused outright.
 
+Adding the bot to a team or group chat installs a Teams app, so it needs an app
+package: `./teams-app/build.sh` builds one from your bot id. DMs need none of this.
+See [SETUP.md](SETUP.md#adding-the-bot-to-a-team-or-group-chat).
+
 ## Tools exposed to the assistant
 
 | Tool                  | Purpose                                                                                                          |

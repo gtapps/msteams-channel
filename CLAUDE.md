@@ -153,7 +153,10 @@ The `/msteams:access` skill (a separate process) mutates `access.json` and drops
 command executed against a real tenant) · `ACCESS.md` (operator-facing access model) ·
 `TROUBLESHOOTING.md` (symptom-first setup diagnostics) · `docs/REACTIONS.md` (public
 limitation) · `CONTRIBUTING.md` (dev setup; why `bun run dev` and not `start`) ·
-`SECURITY.md` (what counts as a vulnerability here). Attribution for adapted OpenClaw (MIT)
+`SECURITY.md` (what counts as a vulnerability here). Two operator tools ship alongside:
+`teams-app/` (the app package source; `build.sh` reads the bot id from `.env` and never
+prints it) and `probe-files.ts` (checks a SharePoint grant end to end, since the failure
+mode is a bare 403). Attribution for adapted OpenClaw (MIT)
 and official-plugin (Apache-2.0) code lives in source headers at each point of use —
 keep those headers when editing the files that carry them. Live E2E procedure,
 runs and deferred feature designs are private Hermit compiled topics, never public docs.
