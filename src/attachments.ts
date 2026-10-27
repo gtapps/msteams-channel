@@ -44,7 +44,22 @@ export type InboundAttachment = {
   fileType?: string
 }
 
-type Handle = InboundAttachment & { url: string; at: number }
+/** `botAuth`: a pasted image, fetched with the bot's own token rather than a tempauth URL. */
+type Handle = InboundAttachment & { url: string; at: number; botAuth?: boolean }
+
+/**
+ * A pasted image's `contentUrl` is fetched WITH the bot token, so a sender who
+ * could point it elsewhere would be handed that token. Only Bot Framework's own
+ * attachment hosts qualify.
+ */
+export function isBotFrameworkUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' && (u.hostname === 'smba.trafficmanager.net' || u.hostname.endsWith('.botframework.com'))
+  } catch {
+    return false
+  }
+}
 
 /**
  * Body and card attachments are message rendering, not files. Excluding these
@@ -72,6 +87,9 @@ function kindOf(fileType: string | undefined, name: string | undefined): 'image'
 export class AttachmentHandles {
   private readonly handles = new Map<string, Handle>()
 
+  /** Yields the bot's Bot Framework token; only pasted images need it. */
+  constructor(private readonly getBotToken?: () => Promise<string>) {}
+
   /** Register the files on an activity and return what the model may see. */
   register(activity: Record<string, any>, now = Date.now()): InboundAttachment[] {
     this.prune(now)
@@ -79,6 +97,19 @@ export class AttachmentHandles {
 
     for (const raw of activity.attachments ?? []) {
       if (isBodyOrCard(raw?.contentType)) continue
+
+      // A pasted image arrives as `image/*` with a Bot Framework contentUrl, not a file card.
+      if (String(raw?.contentType ?? '').startsWith('image/')) {
+        const url = String(raw?.contentUrl ?? '')
+        if (!isBotFrameworkUrl(url)) continue
+        const id = createHash('sha256').update(`${activity.id}:${url}`).digest('hex').slice(0, 32)
+        const name = raw?.name ? String(raw.name) : undefined
+        const attachment: InboundAttachment = { id, name, mime: raw.contentType, kind: 'image' }
+        this.handles.set(id, { ...attachment, url, at: now, botAuth: true })
+        out.push(attachment)
+        continue
+      }
+
       if (raw?.contentType !== TEAMS_FILE_DOWNLOAD_INFO) continue
 
       const url = String(raw?.content?.downloadUrl ?? '')
@@ -115,9 +146,15 @@ export class AttachmentHandles {
       )
     }
 
+    const headers: Record<string, string> = {}
+    if (handle.botAuth) {
+      if (!this.getBotToken) throw new Error('attachment download failed: no bot credentials for a pasted image')
+      headers.Authorization = `Bearer ${await this.getBotToken()}`
+    }
+
     let res: Response
     try {
-      res = await fetch(handle.url)
+      res = await fetch(handle.url, { headers })
     } catch {
       throw new Error('attachment download failed: the file could not be reached')
     }

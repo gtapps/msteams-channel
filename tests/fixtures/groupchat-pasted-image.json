@@ -1,0 +1,59 @@
+{
+  "type": "message",
+  "id": "1793063079517",
+  "serviceUrl": "https://smba.trafficmanager.net/emea/11111111-1111-4111-8111-111111111111/",
+  "timestamp": "2026-10-27T01:04:39.5604059Z",
+  "locale": "en-US",
+  "localTimestamp": "2026-10-27T01:04:39.5604059+00:00",
+  "channelId": "msteams",
+  "from": {
+    "id": "29:1SENDER_THREAD_ID_REDACTED_FOR_FIXTURES",
+    "name": "Test Sender",
+    "aadObjectId": "22222222-2222-4222-8222-222222222222"
+  },
+  "conversation": {
+    "isGroup": true,
+    "conversationType": "groupChat",
+    "tenantId": "11111111-1111-4111-8111-111111111111",
+    "id": "19:GROUP_CHAT_ID@thread.v2"
+  },
+  "recipient": {
+    "id": "28:44444444-4444-4444-8444-444444444444",
+    "name": "test-bot"
+  },
+  "entities": [
+    {
+      "mentioned": {
+        "id": "28:44444444-4444-4444-8444-444444444444",
+        "name": "test-bot"
+      },
+      "text": "<at>test-bot</at>",
+      "type": "mention"
+    },
+    {
+      "locale": "en-US",
+      "country": "US",
+      "platform": "Windows",
+      "timezone": "UTC",
+      "type": "clientInfo"
+    }
+  ],
+  "channelData": {
+    "tenant": {
+      "id": "11111111-1111-4111-8111-111111111111"
+    }
+  },
+  "text": " \r\n\r\n \r\n<at>test-bot</at> just checking if this bot can see images",
+  "textFormat": "plain",
+  "attachments": [
+    {
+      "contentType": "image/*",
+      "contentUrl": "https://smba.trafficmanager.net/emea/11111111-1111-4111-8111-111111111111/v3/attachments/0-wus-d1-88888888888888888888888888888888/views/original"
+    },
+    {
+      "contentType": "text/html",
+      "content": "<p>&nbsp;</p>\r\n<img src=\"https://emea-prod.asyncgw.teams.microsoft.com/v1/objects/0-wus-d1-88888888888888888888888888888888/views/imgo\" itemtype=\"http://schema.skype.com/AMSImage\" alt=\"image\" width=\"800\" height=\"195\" id=\"x_0-wus-d1-88888888888888888888888888888888\" itemid=\"0-wus-d1-88888888888888888888888888888888\">\r\n<p>&nbsp;</p>\r\n<p><span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">test-bot</span>&nbsp;just checking if this bot can see images</p>"
+    }
+  ],
+  "localTimezone": "UTC"
+}

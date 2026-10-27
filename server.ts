@@ -437,7 +437,11 @@ await mcp.connect(new StdioServerTransport())
 const queue = new IngressQueue(QUEUE_DIR)
 const conversations = new ConversationStore(CONVERSATIONS_DIR)
 // In-memory only: these hold download URLs carrying live OneDrive tokens.
-const attachmentHandles = new AttachmentHandles()
+// Pasted images are fetched with the bot's own token, read from the API client the same way as Graph's.
+const attachmentHandles = new AttachmentHandles(async () => {
+  if (!teamsApp) throw new Error('msteams is not configured — no credentials in the state dir')
+  return graphTokenGetter(teamsApp.api)()
+})
 // Outbound files offered by consent card, waiting for someone to click Accept.
 const pendingUploads = new PendingUploadStore(PENDING_DIR)
 // Upload ids this process has handled, so a redelivered invoke stays silent.

@@ -3,6 +3,16 @@
 All notable changes to the msteams channel plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **attachments: pasted images** — screenshots pasted straight into the message
+  box (DMs and group chats) now reach Claude like attached images. Before, only
+  paperclip uploads did, and a paste-only message arrived empty. Teams delivers
+  a paste as an `image/*` attachment on Bot Framework, so it is fetched with the
+  bot's own token, which is only ever sent to Bot Framework hosts.
+
 ## [0.0.1] - 2026-08-13
 
 Initial release.
