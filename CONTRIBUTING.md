@@ -49,7 +49,7 @@ logging as a dev aid for standalone runs, not something to point an operator at.
 1. `bun run typecheck` and `bun test` are green.
 2. `claude plugin validate .` passes.
 3. Read the **Invariants that are easy to break** section of
-   [`.claude/CLAUDE.md`](.claude/CLAUDE.md). Most of them are one-line rules that no test can
+   [`CLAUDE.md`](CLAUDE.md). Most of them are one-line rules that no test can
    catch: credentials never in argv, threading on `extractThreadId()` rather
    than `activity.id`, nothing registered before the gate, attachment
    `downloadUrl`s never logged or persisted.
