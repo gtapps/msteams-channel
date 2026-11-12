@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach, setSystemTime } from 'bun:test'
-import { mkdtempSync, rmSync, chmodSync, readdirSync } from 'fs'
+import { mkdtempSync, rmSync, chmodSync, readdirSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { IngressQueue, entryFilename, TOMBSTONE_TTL_MS } from '../src/queue.js'
@@ -107,7 +107,7 @@ describe('crash replay', () => {
 
   test('an entry written before seq existed still replays', () => {
     const receivedAt = '2026-01-01T00:00:00.000Z'
-    Bun.write(
+    writeFileSync(
       join(dir, entryFilename('legacy')),
       JSON.stringify({ version: 1, receivedAt, rawActivity: activity('legacy') }),
     )
