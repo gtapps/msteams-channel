@@ -156,6 +156,8 @@ Unchecked capabilities are unavailable today, not roadmap commitments.
 
 Inbound images are downloaded automatically to `<state dir>/inbox/`; other file types
 are listed in the notification and fetched on demand with `download_attachment`.
+That includes screenshots pasted straight into the message box (DMs and group chats),
+not only files attached with the paperclip.
 
 Outbound, Teams has no single "send a file" call, so each file takes one of three
 routes. Claude just passes paths to `reply`; the routing is automatic.

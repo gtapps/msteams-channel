@@ -1,0 +1,54 @@
+{
+  "type": "message",
+  "id": "1793062991361",
+  "serviceUrl": "https://smba.trafficmanager.net/emea/11111111-1111-4111-8111-111111111111/",
+  "timestamp": "2026-10-27T01:03:11.4174108Z",
+  "locale": "en-US",
+  "localTimestamp": "2026-10-27T01:03:11.4174108+00:00",
+  "channelId": "msteams",
+  "from": {
+    "id": "29:1SENDER_THREAD_ID_REDACTED_FOR_FIXTURES",
+    "name": "Test Sender",
+    "aadObjectId": "22222222-2222-4222-8222-222222222222"
+  },
+  "conversation": {
+    "conversationType": "personal",
+    "tenantId": "11111111-1111-4111-8111-111111111111",
+    "id": "a:1PERSONAL_CONVERSATION_ID"
+  },
+  "recipient": {
+    "id": "28:44444444-4444-4444-8444-444444444444",
+    "name": "test-bot"
+  },
+  "entities": [
+    {
+      "locale": "en-US",
+      "country": "US",
+      "platform": "Windows",
+      "timezone": "UTC",
+      "type": "clientInfo"
+    }
+  ],
+  "channelData": {
+    "tenant": {
+      "id": "11111111-1111-4111-8111-111111111111"
+    },
+    "app": {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "version": "1.0.0"
+    }
+  },
+  "text": "\r\nsee screenshot ",
+  "textFormat": "plain",
+  "attachments": [
+    {
+      "contentType": "image/*",
+      "contentUrl": "https://smba.trafficmanager.net/emea/11111111-1111-4111-8111-111111111111/v3/attachments/0-wus-d1-77777777777777777777777777777777/views/original"
+    },
+    {
+      "contentType": "text/html",
+      "content": "<p><img src=\"https://emea-prod.asyncgw.teams.microsoft.com/v1/objects/0-wus-d1-77777777777777777777777777777777/views/imgo\" itemtype=\"http://schema.skype.com/AMSImage\" itemscope=\"png\" width=\"1026.4150943396226\" height=\"250\" alt=\"image\" id=\"x_0-wus-d1-77777777777777777777777777777777\" itemid=\"0-wus-d1-77777777777777777777777777777777\"></p>\r\n<p>see screenshot&nbsp;</p>"
+    }
+  ],
+  "localTimezone": "UTC"
+}

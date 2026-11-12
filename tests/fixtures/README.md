@@ -40,6 +40,7 @@ host. Neither is needed to test parsing.
 | `channel-thread-reply.json` | A reply inside the thread rooted at the file above. |
 | `dm-duplicate-first.json` / `dm-duplicate-redelivery.json` | The same activity delivered twice. |
 | `dm-attachment-image.json` | A DM with a file attached. |
+| `dm-pasted-image.json` / `groupchat-pasted-image.json` | A screenshot pasted into the message box (no paperclip), in a DM and in a group chat. Captured 2026-10-27 from a second tenant and scrubbed to the same stand-ins; the media object id is replaced too. |
 | `channel-conversation-update.json` / `channel-installation-update.json` | Non-message activities from installing the app into a team. |
 
 ## Thread semantics (the question these were captured to settle)
@@ -79,6 +80,13 @@ A real file is `application/vnd.microsoft.teams.file.download.info`, with
 OpenClaw's `isAdvertisedFileAttachment`, `text/html`,
 `application/vnd.microsoft.card.*` and `application/vnd.microsoft.teams.card.*`
 are all excluded.
+
+A **pasted** image is not a file card. It arrives as `image/*` with a
+`contentUrl` on `smba.trafficmanager.net` (`/v3/attachments/<id>/views/original`),
+plus the same image as an `<img>` in the `text/html` body. That URL needs the
+bot's Bot Framework token, unlike a file's self-authorizing `downloadUrl`, so
+the token is only ever sent to Bot Framework hosts. DMs and group chats
+deliver it identically.
 
 ## Duplicate delivery
 
