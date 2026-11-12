@@ -55,15 +55,13 @@ export type SharingScope = 'organization' | 'users'
  * builds it as a factory, so all three shapes are handled. The token itself is
  * never logged or put in an error.
  */
-export function graphTokenGetter(graph: GraphTokenSource): () => Promise<string> {
+export function graphTokenGetter(graph: GraphTokenSource, service = 'Microsoft Graph'): () => Promise<string> {
   return async () => {
     const token = graph.http?.token
     const resolved = typeof token === 'function' ? await (token as (c: unknown) => unknown)({}) : token
     const value = resolved == null ? '' : String(resolved)
     if (!value) {
-      throw new Error(
-        'no Microsoft Graph token available — the channel is running without credentials',
-      )
+      throw new Error(`no ${service} token available: the channel is running without credentials`)
     }
     return value
   }

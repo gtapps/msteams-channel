@@ -52,19 +52,34 @@ type Handle = InboundAttachment & { url: string; at: number; botAuth?: boolean }
  * could point it elsewhere would be handed that token. Only Bot Framework's own
  * attachment hosts qualify, and only their attachment path: the same token
  * would read any other Bot Framework endpoint (a conversation's members, say).
+ *
+ * Besides the public-cloud hosts, the activity's own `serviceUrl` origin
+ * qualifies. Before the activity reaches us, the SDK requires it to equal the
+ * `serviceurl` claim of the Bot Framework-signed JWT, and it sends this same
+ * token there for every reply. This is how sovereign-cloud pastes get through.
  */
 const ATTACHMENT_VIEW_PATH = /^(?:\/[A-Za-z0-9-]+)*\/v3\/attachments\/[A-Za-z0-9_:-]+\/views\/[A-Za-z0-9_-]+$/
 
-export function isBotFrameworkUrl(url: string): boolean {
+export function isBotFrameworkUrl(url: string, serviceUrl?: string): boolean {
   try {
     const u = new URL(url)
     return (
       u.protocol === 'https:' &&
-      (u.hostname === 'smba.trafficmanager.net' || u.hostname.endsWith('.botframework.com')) &&
+      (u.host === 'smba.trafficmanager.net' ||
+        u.host.endsWith('.botframework.com') ||
+        u.origin === originOf(serviceUrl)) &&
       ATTACHMENT_VIEW_PATH.test(u.pathname)
     )
   } catch {
     return false
+  }
+}
+
+function originOf(url: string | undefined): string | undefined {
+  try {
+    return url ? new URL(url).origin : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -86,7 +101,9 @@ function sniffImageExt(b: Uint8Array): string | undefined {
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png'
   if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg'
   if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'gif'
-  if (Buffer.from(b.subarray(8, 12)).toString('latin1') === 'WEBP') return 'webp'
+  if (b[0] === 0x42 && b[1] === 0x4d) return 'bmp'
+  const ascii = (from: number, to: number) => Buffer.from(b.subarray(from, to)).toString('latin1')
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp'
   return undefined
 }
 
@@ -115,9 +132,9 @@ export class AttachmentHandles {
       if (isBodyOrCard(raw?.contentType)) continue
 
       // A pasted image arrives as `image/*` with a Bot Framework contentUrl, not a file card.
-      if (String(raw?.contentType ?? '').startsWith('image/')) {
+      if (String(raw?.contentType ?? '').toLowerCase().startsWith('image/')) {
         const url = String(raw?.contentUrl ?? '')
-        if (!isBotFrameworkUrl(url)) continue
+        if (!isBotFrameworkUrl(url, activity.serviceUrl)) continue
         const id = createHash('sha256').update(`${activity.id}:${url}`).digest('hex').slice(0, 32)
         const name = raw?.name ? String(raw.name) : undefined
         const attachment: InboundAttachment = { id, name, mime: raw.contentType, kind: 'image' }

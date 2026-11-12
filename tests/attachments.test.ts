@@ -153,10 +153,45 @@ describe('pasted images', () => {
       'https://smba.trafficmanager.net/emea/t/v3/conversations/a:1/members',
       'https://smba.trafficmanager.net/emea/t/v3/conversations/a:1/members/v3/attachments/x/views/original',
       'https://smba.trafficmanager.net/emea/t/v3/attachments/%2e%2e/views/original',
+      'https://smba.trafficmanager.net:8443/emea/t/v3/attachments/x/views/original',
       'not a url',
     ]) {
       expect(new AttachmentHandles().register(withContentUrl(url))).toHaveLength(0)
     }
+  })
+
+  // A sovereign-cloud tenant's attachments live on its own serviceUrl host,
+  // which the SDK has already matched against the signed JWT's claim.
+  const SOVEREIGN = 'https://smba.infra.gcc.teams.microsoft.com/amer/t/'
+  const onServiceUrl = (url: string, serviceUrl = SOVEREIGN) => {
+    const activity = withContentUrl(url)
+    activity.serviceUrl = serviceUrl
+    return activity
+  }
+
+  test("a contentUrl on the activity's own serviceUrl origin is accepted", () => {
+    const url = 'https://smba.infra.gcc.teams.microsoft.com/amer/t/v3/attachments/0-x-1/views/original'
+    expect(new AttachmentHandles().register(onServiceUrl(url))).toHaveLength(1)
+  })
+
+  test('a host that differs from serviceUrl is still rejected', () => {
+    for (const url of [
+      'https://other.gcc.teams.microsoft.com/amer/t/v3/attachments/0-x-1/views/original',
+      'https://smba.infra.gcc.teams.microsoft.com:8443/amer/t/v3/attachments/0-x-1/views/original',
+      'http://smba.infra.gcc.teams.microsoft.com/amer/t/v3/attachments/0-x-1/views/original',
+    ]) {
+      expect(new AttachmentHandles().register(onServiceUrl(url))).toHaveLength(0)
+    }
+    const url = 'https://smba.infra.gcc.teams.microsoft.com/amer/t/v3/attachments/0-x-1/views/original'
+    const noServiceUrl = onServiceUrl(url)
+    delete noServiceUrl.serviceUrl
+    expect(new AttachmentHandles().register(noServiceUrl)).toHaveLength(0)
+    expect(new AttachmentHandles().register(onServiceUrl(url, 'not a url'))).toHaveLength(0)
+  })
+
+  test('the attachment path check still applies on the serviceUrl origin', () => {
+    const url = 'https://smba.infra.gcc.teams.microsoft.com/amer/t/v3/conversations/a:1/members'
+    expect(new AttachmentHandles().register(onServiceUrl(url))).toHaveLength(0)
   })
 
   test('it downloads with the bot token', async () => {
