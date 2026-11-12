@@ -50,12 +50,19 @@ type Handle = InboundAttachment & { url: string; at: number; botAuth?: boolean }
 /**
  * A pasted image's `contentUrl` is fetched WITH the bot token, so a sender who
  * could point it elsewhere would be handed that token. Only Bot Framework's own
- * attachment hosts qualify.
+ * attachment hosts qualify, and only their attachment path: the same token
+ * would read any other Bot Framework endpoint (a conversation's members, say).
  */
+const ATTACHMENT_VIEW_PATH = /^(?:\/[A-Za-z0-9-]+)*\/v3\/attachments\/[A-Za-z0-9_:-]+\/views\/[A-Za-z0-9_-]+$/
+
 export function isBotFrameworkUrl(url: string): boolean {
   try {
     const u = new URL(url)
-    return u.protocol === 'https:' && (u.hostname === 'smba.trafficmanager.net' || u.hostname.endsWith('.botframework.com'))
+    return (
+      u.protocol === 'https:' &&
+      (u.hostname === 'smba.trafficmanager.net' || u.hostname.endsWith('.botframework.com')) &&
+      ATTACHMENT_VIEW_PATH.test(u.pathname)
+    )
   } catch {
     return false
   }
@@ -72,6 +79,15 @@ export function isBodyOrCard(contentType: string | undefined): boolean {
     t.startsWith('application/vnd.microsoft.card.') ||
     t.startsWith('application/vnd.microsoft.teams.card.')
   )
+}
+
+/** A pasted image has no name and `image/*` as its type, so its extension comes from its bytes. */
+function sniffImageExt(b: Uint8Array): string | undefined {
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png'
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg'
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'gif'
+  if (Buffer.from(b.subarray(8, 12)).toString('latin1') === 'WEBP') return 'webp'
+  return undefined
 }
 
 function kindOf(fileType: string | undefined, name: string | undefined): 'image' | 'file' {
@@ -187,7 +203,9 @@ export class AttachmentHandles {
     }
     const bytes = Buffer.concat(chunks)
 
-    const path = join(inboxDir, safeInboxName(id, handle))
+    // Without an extension Claude's Read would not treat the file as an image.
+    const fileType = handle.botAuth ? sniffImageExt(bytes) : handle.fileType
+    const path = join(inboxDir, safeInboxName(id, { name: handle.name, fileType }))
     writeFileSync(path, bytes, { mode: 0o600 })
     return path
   }

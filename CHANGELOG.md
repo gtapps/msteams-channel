@@ -7,7 +7,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **attachments: pasted images** — screenshots pasted straight into the message
+- **attachments: pasted images.** Screenshots pasted straight into the message
   box (DMs and group chats) now reach Claude like attached images. Before, only
   paperclip uploads did, and a paste-only message arrived empty. Teams delivers
   a paste as an `image/*` attachment on Bot Framework, so it is fetched with the

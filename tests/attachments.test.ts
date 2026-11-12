@@ -150,6 +150,9 @@ describe('pasted images', () => {
       'https://evil.example/x.png',
       'http://smba.trafficmanager.net/x',
       'https://smba.trafficmanager.net.evil.example/x',
+      'https://smba.trafficmanager.net/emea/t/v3/conversations/a:1/members',
+      'https://smba.trafficmanager.net/emea/t/v3/conversations/a:1/members/v3/attachments/x/views/original',
+      'https://smba.trafficmanager.net/emea/t/v3/attachments/%2e%2e/views/original',
       'not a url',
     ]) {
       expect(new AttachmentHandles().register(withContentUrl(url))).toHaveLength(0)
@@ -162,6 +165,8 @@ describe('pasted images', () => {
       const path = await handles.download(handles.register(GROUP_PASTED)[0].id, inbox)
       expect(calls).toEqual([{ url: BF_URL(GROUP_PASTED), auth: 'Bearer BOT_TOKEN' }])
       expect(readFileSync(path)).toEqual(Buffer.from([255, 216, 255, 224]))
+      // Named from its bytes: the paste carries no name and only `image/*`.
+      expect(path.endsWith('.jpg')).toBe(true)
     })
   })
 
