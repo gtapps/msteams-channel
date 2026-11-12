@@ -3,15 +3,37 @@
 All notable changes to the msteams channel plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.0.2] - 2026-11-12
 
 ### Added
 
 - **attachments: pasted images.** Screenshots pasted straight into the message
   box (DMs and group chats) now reach Claude like attached images. Before, only
-  paperclip uploads did, and a paste-only message arrived empty. Teams delivers
-  a paste as an `image/*` attachment on Bot Framework, so it is fetched with the
-  bot's own token, which is only ever sent to Bot Framework hosts.
+  paperclip uploads did, and a paste-only message arrived empty.
+- **plugin: icon** — the plugin manifest now carries an icon.
+
+### Changed
+
+- **deps: caret ranges and MCP SDK 1.32.2** — the Teams SDK, `zod` and the MCP
+  SDK are no longer pinned to exact versions; `bun.lock` still fixes what installs.
+
+### Fixed
+
+- **queue: replay order** — entries received in the same millisecond now replay in
+  arrival order instead of directory order.
+
+### Security
+
+- **security: bot token scoped to Bot Framework attachment URLs** — a pasted image
+  is fetched with the bot's own token, so it is only ever sent over HTTPS to Bot
+  Framework attachment-view paths on its public hosts or the activity's signed
+  `serviceUrl` origin. Any other `contentUrl` is ignored.
+
+### Upgrade Instructions
+
+1. **Restart the session** with `claude --channels plugin:msteams@msteams-channel`.
+
+No state-dir or credential changes required.
 
 ## [0.0.1] - 2026-08-13
 

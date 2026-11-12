@@ -108,7 +108,7 @@ process.on('uncaughtException', err => {
 })
 
 const mcp = new Server(
-  { name: 'msteams', version: '0.0.1' },
+  { name: 'msteams', version: '0.0.2' },
   {
     capabilities: {
       tools: {},
