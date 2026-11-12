@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { describe, expect, test, beforeEach, afterEach, setSystemTime } from 'bun:test'
 import { mkdtempSync, rmSync, chmodSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -80,10 +80,44 @@ describe('crash replay', () => {
   })
 
   test('replay is ordered oldest-first', () => {
-    queue.enqueue({ ...activity('a1'), id: 'a1' })
-    queue.enqueue({ ...activity('a2'), id: 'a2' })
-    const order = queue.pending().map(p => p.rawActivity.id)
-    expect(order).toEqual(['a1', 'a2'])
+    try {
+      setSystemTime(new Date('2026-01-01T00:00:00.001Z'))
+      queue.enqueue(activity('a1'))
+      setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      queue.enqueue(activity('a0'))
+    } finally {
+      setSystemTime()
+    }
+    // Clock-older wins even though it was enqueued second.
+    expect(queue.pending().map(p => p.rawActivity.id)).toEqual(['a0', 'a1'])
+  })
+
+  test('entries from the same millisecond replay in enqueue order', () => {
+    // Without a tie-breaker the order falls back to readdir, which is not
+    // enqueue order. Several ids so a lucky directory order cannot pass it.
+    const ids = ['m5', 'm1', 'm4', 'm2', 'm3']
+    try {
+      setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      for (const id of ids) queue.enqueue(activity(id))
+    } finally {
+      setSystemTime()
+    }
+    expect(queue.pending().map(p => p.rawActivity.id)).toEqual(ids)
+  })
+
+  test('an entry written before seq existed still replays', () => {
+    const receivedAt = '2026-01-01T00:00:00.000Z'
+    Bun.write(
+      join(dir, entryFilename('legacy')),
+      JSON.stringify({ version: 1, receivedAt, rawActivity: activity('legacy') }),
+    )
+    try {
+      setSystemTime(new Date(receivedAt))
+      queue.enqueue(activity('new'))
+    } finally {
+      setSystemTime()
+    }
+    expect(queue.pending().map(p => p.rawActivity.id)).toEqual(['legacy', 'new'])
   })
 
   test('a corrupt entry is skipped rather than wedging boot', () => {

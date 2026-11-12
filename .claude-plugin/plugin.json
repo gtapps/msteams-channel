@@ -6,6 +6,7 @@
     "name": "gtapps"
   },
   "license": "MIT",
+  "icon": "./icon.svg",
   "homepage": "https://github.com/gtapps/msteams-channel",
   "repository": "https://github.com/gtapps/msteams-channel",
   "keywords": [

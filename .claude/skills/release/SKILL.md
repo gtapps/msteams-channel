@@ -70,7 +70,7 @@ never get devDependencies, so a devDep that leaked into runtime code passes CI
 and fails at *their* first launch:
 
 ```bash
-D=$(mktemp -d) && cp package.json bun.lock .npmrc "$D"/ \
+D=$(mktemp -d) && cp package.json bun.lock "$D"/ \
   && (cd "$D" && bun install --production --frozen-lockfile --no-summary) \
   && grep -rn "jose\|jwks-rsa\|@types/bun\|typescript" server.ts src/*.ts send.ts \
   && echo "LEAK: a devDependency is imported by runtime code — stop" || echo "runtime deps clean"
