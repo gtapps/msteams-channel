@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { describe, expect, test, beforeEach, afterEach, setSystemTime } from 'bun:test'
 import { mkdtempSync, rmSync, chmodSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -80,8 +80,16 @@ describe('crash replay', () => {
   })
 
   test('replay is ordered oldest-first', () => {
-    queue.enqueue({ ...activity('a1'), id: 'a1' })
-    queue.enqueue({ ...activity('a2'), id: 'a2' })
+    // Pin the clock: two enqueues in the same millisecond tie on receivedAt and
+    // fall back to readdir order, which made this test flaky.
+    try {
+      setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      queue.enqueue({ ...activity('a1'), id: 'a1' })
+      setSystemTime(new Date('2026-01-01T00:00:00.001Z'))
+      queue.enqueue({ ...activity('a2'), id: 'a2' })
+    } finally {
+      setSystemTime()
+    }
     const order = queue.pending().map(p => p.rawActivity.id)
     expect(order).toEqual(['a1', 'a2'])
   })
