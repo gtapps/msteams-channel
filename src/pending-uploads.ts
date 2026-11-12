@@ -16,7 +16,7 @@
  * source file changed or was deleted meanwhile.
  *
  * Only our own outbound bytes live here. Nothing from the invoke is ever
- * persisted — `uploadInfo.uploadUrl` is a live upload credential (CLAUDE.md).
+ * persisted — `uploadInfo.uploadUrl` is a live upload credential (.claude/CLAUDE.md).
  *
  * Layout, one record per offer:
  *   <id>.json          metadata, written last: its presence is the commit

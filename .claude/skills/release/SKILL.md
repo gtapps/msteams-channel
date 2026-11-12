@@ -60,17 +60,18 @@ Notes:
 - `bun install --frozen-lockfile` failing means `bun.lock` is behind
   `package.json`. Fix it with `bun install` and commit the lockfile *before*
   releasing — users install from this lockfile.
-- `claude plugin validate .` is clean today. `claude plugin tag` additionally
-  warns that `CLAUDE.md` / `CLAUDE.local.md` at the plugin root aren't loaded as
-  plugin context — expected, since the plugin root *is* the repo root. Warnings
-  do not block a release; a hard `✘` does.
+- `claude plugin validate .` is clean today. Contributor instructions live in
+  `.claude/CLAUDE.md`, not the root, because the plugin root *is* the repo root
+  and the plugin directory flags a root `CLAUDE.md` as instructions that never
+  load. A local `CLAUDE.local.md` is gitignored and never shipped. Warnings do
+  not block a release; a hard `✘` does.
 
 Then the check the suites cannot do — **the production install path**. Users
 never get devDependencies, so a devDep that leaked into runtime code passes CI
 and fails at *their* first launch:
 
 ```bash
-D=$(mktemp -d) && cp package.json bun.lock .npmrc "$D"/ \
+D=$(mktemp -d) && cp package.json bun.lock "$D"/ \
   && (cd "$D" && bun install --production --frozen-lockfile --no-summary) \
   && grep -rn "jose\|jwks-rsa\|@types/bun\|typescript" server.ts src/*.ts send.ts \
   && echo "LEAK: a devDependency is imported by runtime code — stop" || echo "runtime deps clean"
@@ -104,7 +105,7 @@ operator holds that the test suite has no view of:
    wire still works.
 
 Also confirm the prose still describes reality: `README.md` (tool table,
-enablement, variable table), `ACCESS.md`, `SETUP.md`, `CLAUDE.md`
+enablement, variable table), `ACCESS.md`, `SETUP.md`, `.claude/CLAUDE.md`
 invariants. Fix inaccuracies in this release; docs-only corrections go in the
 commit message, **not** the CHANGELOG.
 
