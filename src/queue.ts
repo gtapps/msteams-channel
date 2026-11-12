@@ -31,8 +31,16 @@ export const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000
 export type QueueEntry = {
   version: number
   receivedAt: string
+  /**
+   * Tie-breaker for entries enqueued in the same millisecond, which would
+   * otherwise replay in readdir order. Process-local; absent on entries
+   * written before it existed, which sort first on a tie.
+   */
+  seq?: number
   rawActivity: Record<string, unknown>
 }
+
+let nextSeq = 0
 
 type Tombstone = { version: number; done: true; at: string }
 
@@ -77,6 +85,7 @@ export class IngressQueue {
     const entry: QueueEntry = {
       version: QUEUE_VERSION,
       receivedAt: new Date().toISOString(),
+      seq: nextSeq++,
       rawActivity: activity,
     }
     this.writeAtomic(target, entry)
@@ -118,7 +127,7 @@ export class IngressQueue {
         // Unreadable/corrupt entry: skip it rather than wedging boot.
       }
     }
-    return out.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))
+    return out.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt) || (a.seq ?? -1) - (b.seq ?? -1))
   }
 
   /** Drop tombstones past the dedup window. Safe to call on boot. */
